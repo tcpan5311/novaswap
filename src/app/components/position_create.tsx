@@ -1,30 +1,34 @@
 "use client"
 import { useState, useRef, useEffect } from 'react'
-import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, } from '@mantine/core'
+import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea} from '@mantine/core'
 // import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
+import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown } from '@tabler/icons-react'
 
     const data = 
     [
         { date: "Mar 22", Price: 2500 },
         { date: "Mar 23", Price: 2650 },
+        { date: "Mar 24", Price: 3500 },
         { date: "Mar 24", Price: 3100 },
-        { date: "Mar 25", Price: 2950 },
-        { date: "Mar 26", Price: 2800 },
+        { date: "Mar 27", Price: 2950 },
+        { date: "Mar 28", Price: 2800 },
     ]
 
     type data = {date: string; Price: number}
 
-    const getPriceRange = (data: data[]): {graphMaxPrice: number; graphMinPrice: number} => 
+    const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
     {
         const prices = data.map((item: data) => item.Price)
         const highestPrice = Math.max(...prices)
         const lowestPrice = Math.min(...prices)
-    
+        
         const graphMaxPrice = highestPrice * 1.2
         const graphMinPrice = lowestPrice * 0.8
     
         return {
+            highestPrice,
+            lowestPrice,
             graphMaxPrice,
             graphMinPrice
         }
@@ -47,10 +51,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 export default function PositionCreate() 
 {
 
-    let {graphMaxPrice, graphMinPrice } = getPriceRange(data);
+    let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
 
     const [minPrice, setMinPrice] = useState(2700)
-    const [maxPrice, setMaxPrice] = useState(2900)
+    const [maxPrice, setMaxPrice] = useState(3100)
     
     
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
@@ -59,21 +63,6 @@ export default function PositionCreate()
     
     useEffect(() => 
     {
-        const handleMaxPriceMove = (event: MouseEvent) => 
-        {
-            if (!chartRef.current) return
-            
-            const rect = chartRef.current.getBoundingClientRect()
-            const offsetY = event.clientY - rect.top
-            const chartHeight = rect.height
-            
-            let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-            
-            newMaxPrice = Math.max(newMaxPrice, minPrice + 10)
-            newMaxPrice = Math.min(newMaxPrice, 3100)
-            setMaxPrice(newMaxPrice)
-        }
-        
     
         const handleMinPriceMove = (event: MouseEvent) => 
         {
@@ -86,10 +75,38 @@ export default function PositionCreate()
             
             let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
             
-            newMinPrice = Math.min(newMinPrice, maxPrice - 10)
-            newMinPrice = Math.max(newMinPrice, 2500)
+            if (newMinPrice > maxPrice - 10) 
+            {
+                newMinPrice = maxPrice - 10
+            } 
+            else if (newMinPrice < lowestPrice) 
+            {
+                newMinPrice = lowestPrice
+            }
             
             setMinPrice(newMinPrice)
+        }
+
+        const handleMaxPriceMove = (event: MouseEvent) => 
+        {
+            if (!chartRef.current) return
+            
+            const rect = chartRef.current.getBoundingClientRect()
+            const offsetY = event.clientY - rect.top
+            const chartHeight = rect.height
+            
+            let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
+            
+            if (newMaxPrice < minPrice + 10) 
+            {
+                newMaxPrice = minPrice + 10
+            } 
+            else if (newMaxPrice > highestPrice) 
+            {
+                newMaxPrice = highestPrice
+            }
+            
+            setMaxPrice(newMaxPrice)
         }
         
     
@@ -127,7 +144,7 @@ export default function PositionCreate()
 
     const HandleStepChange = (nextStep: number) => 
     {
-        const isOutOfBounds = nextStep > 3 || nextStep <= 0
+        const isOutOfBounds = nextStep > 2 || nextStep <= 0
 
         if (isOutOfBounds) 
         {
@@ -141,169 +158,331 @@ export default function PositionCreate()
 
 
     return (
-        <Grid ml={200} mt={50}>
-            <Grid.Col span={12}>
-                <Box className="flex flex-wrap p-4">
-                    <Breadcrumbs separator="→" separatorMargin="sm" mt="xs">
-                        {links}
-                    </Breadcrumbs>
-                </Box>
-            </Grid.Col>
+        <Box>
 
-            <Grid.Col span={12}>
-                <Text className='!text-[30px]' fw={750} c="#4f0099" mt={10}>
-                    New position
-                </Text>
-            </Grid.Col>
+            <Grid ml={200} mt={50}>
+                <Grid.Col span={12}>
+                    <Box className="flex flex-wrap p-4">
+                        <Breadcrumbs separator="→" separatorMargin="sm" mt="xs">
+                            {links}
+                        </Breadcrumbs>
+                    </Box>
+                </Grid.Col>
 
-            <Grid.Col span={{ base: 10, md: 10, lg: 4 }}>
-                <Card shadow="md" p="lg" radius="md" className="bg-gray-100">
-                    <Stepper active={stepActive} onStepClick={setStepActive} orientation='vertical'>
-                        <Stepper.Step
-                        label="Step 1"
-                        description="Select token pair and fees"
-                        allowStepSelect={shouldAllowSelectStep(0)}
-                        >
-                        </Stepper.Step>
+                <Grid.Col span={12}>
+                    <Text className='!text-[30px]' fw={750} c="#4f0099" mt={10}>
+                        New position
+                    </Text>
+                </Grid.Col>
 
-                        <Stepper.Step
-                        label="Step 2"
-                        description="Set price range and deposit amount"
-                        allowStepSelect={shouldAllowSelectStep(1)}
-                        >
-                        </Stepper.Step>
+                <Grid.Col span={{ base: 10, md: 10, lg: 4 }} mt={7}>
+                    <Card shadow="sm" padding="lg" radius="md" withBorder>
+                        <Stepper active={stepActive} onStepClick={setStepActive} orientation='vertical'>
+                            <Stepper.Step
+                            label="Step 1"
+                            description="Select token pair and fees"
+                            allowStepSelect={shouldAllowSelectStep(0)}
+                            >
+                            </Stepper.Step>
 
-                        <Stepper.Completed>
-                            Completed, click back button to get to previous step
-                        </Stepper.Completed>
-                    </Stepper>
+                            <Stepper.Step
+                            label="Step 2"
+                            description="Set price range and deposit amount"
+                            allowStepSelect={shouldAllowSelectStep(1)}
+                            >
+                            </Stepper.Step>
 
-                        <Group justify="center" mt="xl">
-                        <Button variant="default" onClick={() => HandleStepChange(stepActive - 1)}>
-                            Back
-                        </Button>
-                        <Button onClick={() => HandleStepChange(stepActive + 1)}>Next step</Button>
-                        </Group>
-                </Card>
-            </Grid.Col>
+                            <Stepper.Completed>
+                                You are all set to add a new position!
+                            </Stepper.Completed>
+                        </Stepper>
 
-            <Grid.Col span={{ base: 10, md: 10, lg: 5 }}>
-                <Card shadow="md" p="lg" radius="md" className="bg-gray-200">
-                    <Text size="lg" fw={600} c="#4f0099">Select Pair</Text>
-                    <Text mt={10} size="sm" c="gray"> Choose the tokens you want to provide liquidity for.</Text>
-
-                    <Flex
-                    mt="md"
-                    gap="md"
-                    direction={{ base: "column", sm: "row" }} // Stacked on mobile, row on larger screens
-                    wrap="wrap"
-                    >
-                        <MultiSelect
-                        data={[]}
-                        placeholder="Select token"
-                        onDropdownOpen={() => console.log("Hello, World!")}
-                        />
-
-                        <MultiSelect
-                        data={[]}
-                        placeholder="Select token"
-                        onDropdownOpen={() => console.log("Hello, World!")}
-                        />
-                    </Flex>
-
-                    <Text size="lg" fw={600} c="#4f0099" mt={30}>Fee tier</Text>
-                    <Text mt={10} size="sm" c="gray">The amount earned providing liquidity</Text>
-
-                </Card>
-            </Grid.Col>
-
-            <Grid.Col span={{ base: 10, md: 10, lg: 5 }}>
-                <Box>
-                    <Card mt={10}>
-                        <div className="relative select-none" ref={chartRef}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <LineChart data={data}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
-                                <YAxis domain={[graphMinPrice, graphMaxPrice]} />
-                                <Tooltip />
-
-                                <ReferenceArea
-                                y1={minPrice}
-                                y2={maxPrice}
-                                fill="purple"
-                                fillOpacity={0.1}
-                                />
-
-                                <ReferenceLine
-                                y={minPrice}
-                                stroke="red"
-                                strokeWidth={5}
-                                label={({ viewBox }) => 
-                                (   
-                                    <g>
-                                        <rect
-                                        x={viewBox.x + viewBox.x * 3.1}
-                                        y={viewBox.y - 7}
-                                        width="40"
-                                        height="15"
-                                        fill="purple"
-                                        >
-                                        </rect>
-
-                                        <text
-                                        x={viewBox.x + viewBox.x * 2.9}
-                                        y={viewBox.y + 20}
-                                        fill='purple'
-                                        fontSize='11px'
-                                        fontWeight="bold"
-                                        >
-                                        {`Min: ${minPrice.toFixed(2)}`}
-                                        </text>
-                                    </g>
-                                )}
-                                onMouseDown={() => setDraggingType("min")}
-                                cursor="ns-resize"
-                                />
-                                <ReferenceLine
-                                y={maxPrice}
-                                stroke="green"
-                                strokeWidth={5}
-                                label={({ viewBox }) => 
-                                (
-                                    <g>
-                                        <rect
-                                        x={viewBox.x + viewBox.x * 3.1}
-                                        y={viewBox.y - 7}
-                                        width="40"
-                                        height="15"
-                                        fill="purple"
-                                        >
-                                        </rect>
-
-                                        <text
-                                        x={viewBox.x + viewBox.x * 2.9}
-                                        y={viewBox.y - 20}
-                                        fontSize='11px'
-                                        fill='purple'
-                                        fontWeight="bold"
-                                        >
-                                        {`Max: ${maxPrice.toFixed(2)}`}
-                                        </text>
-                                    </g>
-                                )}
-                                onMouseDown={() => setDraggingType("max")}
-                                cursor="ns-resize"
-                                />
-
-                                <Line type="monotone" dataKey="Price" stroke="purple" strokeWidth={3} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                        </div>
+                            <Group justify="center" mt="xl">
+                            <Button variant="default" onClick={() => HandleStepChange(stepActive - 1)}>
+                                Back
+                            </Button>
+                            <Button onClick={() => HandleStepChange(stepActive + 1)}>Next step</Button>
+                            </Group>
                     </Card>
-                </Box>
-            </Grid.Col>
+                </Grid.Col>
 
-        </Grid>
+                {stepActive === 1 && 
+                (
+                    <Grid.Col span={{ base: 5, md: 10, lg: 5 }}>
+                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                            <Text size="lg" fw={600} c="#4f0099">Select Pair</Text>
+                            <Text mt={10} size="sm" c="gray"> Choose the tokens you want to provide liquidity for.</Text>
+
+                            <Flex
+                            mt="md"
+                            gap="md"
+                            direction={{ base: "column", sm: "row" }}
+                            wrap="wrap"
+                            >
+                                <MultiSelect
+                                data={[]}
+                                placeholder="Select token"
+                                onDropdownOpen={() => console.log("Hello, World!")}
+                                />
+
+                                <MultiSelect
+                                data={[]}
+                                placeholder="Select token"
+                                onDropdownOpen={() => console.log("Hello, World!")}
+                                />
+                            </Flex>
+
+                            <Text size="lg" fw={600} c="#4f0099" mt={30}>Fee tier</Text>
+                            <Text mt={10} size="sm" c="gray">The amount earned providing liquidity</Text>
+
+                            <Card shadow="sm" radius="md" withBorder mt={20}>
+                                <Stack>
+                                    <Group wrap="wrap" justify='space-between'>
+                                        <Box>
+                                            <Text size="md" fw={600} c="#4f0099">
+                                            5% fee tier
+                                            </Text>
+                                            <Text size="sm" c="gray">
+                                            The % you earn in fees
+                                            </Text>
+                                        </Box>
+                                        <Button rightSection={<IconChevronDown size={16} />}>
+                                            More
+                                        </Button>
+                                    </Group>
+                                </Stack>
+                            </Card>
+
+                        </Card>
+                    </Grid.Col>
+                )}
+
+                {stepActive === 2 && 
+                (
+                    <Grid.Col span={{ base: 10, md: 5, lg: 5 }}>
+                        <Box>
+                            <Card shadow="sm" padding="lg" radius="md" mt={10} withBorder>
+                            <Text size="lg" fw={600} c="#4f0099" mb={20}>Set price range</Text>
+                                <div className="relative select-none" ref={chartRef}>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <LineChart data={data}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="date" />
+                                            <YAxis domain={[graphMinPrice, graphMaxPrice]} />
+                                            <Tooltip />
+
+                                            <ReferenceArea
+                                            y1={minPrice}
+                                            y2={maxPrice}
+                                            fill="purple"
+                                            fillOpacity={0.1}
+                                            />
+
+                                            <ReferenceLine
+                                            y={minPrice}
+                                            stroke="red"
+                                            strokeWidth={5}
+                                            label={({ viewBox }) => 
+                                            (   
+                                                <g>
+                                                    <rect
+                                                    x={viewBox.x + viewBox.x * 3.1}
+                                                    y={viewBox.y - 6}
+                                                    width="40"
+                                                    height="10"
+                                                    fill="purple"
+                                                    onMouseDown={() => setDraggingType("min")}
+                                                    cursor="ns-resize"
+                                                    >
+                                                    </rect>
+
+                                                    <text
+                                                    x={viewBox.x + viewBox.x * 2.9}
+                                                    y={viewBox.y + 20}
+                                                    fill='purple'
+                                                    fontSize='11px'
+                                                    fontWeight="bold"
+                                                    >
+                                                    {`Min: ${minPrice.toFixed(2)}`}
+                                                    </text>
+                                                </g>
+                                            )}
+                                            />
+                                            <ReferenceLine
+                                            y={maxPrice}
+                                            stroke="green"
+                                            strokeWidth={5}
+                                            label={({ viewBox }) => 
+                                            (
+                                                <g>
+                                                    <rect
+                                                    x={viewBox.x + viewBox.x * 3.1}
+                                                    y={viewBox.y - 6}
+                                                    width="40"
+                                                    height="10"
+                                                    fill="purple"
+                                                    onMouseDown={() => setDraggingType("max")}
+                                                    cursor="ns-resize"
+                                                    >
+                                                    </rect>
+
+                                                    <text
+                                                    x={viewBox.x + viewBox.x * 2.9}
+                                                    y={viewBox.y - 20}
+                                                    fontSize='11px'
+                                                    fill='purple'
+                                                    fontWeight="bold"
+                                                    >
+                                                    {`Max: ${maxPrice.toFixed(2)}`}
+                                                    </text>
+                                                </g>
+                                            )}
+                                            />
+
+                                            <Line type="monotone" dataKey="Price" stroke="purple" strokeWidth={3} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                    <Grid gutter="md" mt={10}>
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                            <Flex justify="space-between" align="center">
+                                                <Box>
+                                                    <Text c="#4f0099" size="sm" fw={700}>Min price</Text>
+                                                    <Input
+                                                    c="#4f0099"
+                                                    variant="unstyled"
+                                                    size="xl"
+                                                    value={parseFloat(minPrice.toFixed(2))}
+                                                    onChange={(event) => setMinPrice(Number(event.target.value))}
+                                                    onBlur={() => 
+                                                    {
+                                                        setMinPrice((prev1) => 
+                                                        {
+                                                            let newMinPrice = prev1;
+
+                                                            if (newMinPrice > maxPrice - 10) 
+                                                            {
+                                                                newMinPrice = maxPrice - 10;
+                                                            } 
+                                                            else if (newMinPrice < lowestPrice) 
+                                                            {
+                                                                newMinPrice = lowestPrice;
+                                                            }
+
+                                                            return newMinPrice;
+                                                        })
+                                                    }}
+                                                    />
+                                                    <Text c="#4f0099" size="sm">NEAR per ETH</Text>
+                                                </Box>
+
+                                                <Stack>
+                                                    <ActionIcon radius="xl">
+                                                        <IconPlus size={20} />
+                                                    </ActionIcon>
+                                                    <ActionIcon radius="xl">
+                                                        <IconMinus size={20} />
+                                                    </ActionIcon>
+                                                </Stack>
+                                            </Flex>
+                                        </Card>
+                                    </Grid.Col>
+
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                            <Flex justify="space-between" align="center">
+                                                <Box>
+                                                    <Text c="#4f0099" size="sm" fw={700}>Max price</Text>
+                                                    <Input
+                                                    c="#4f0099"
+                                                    variant="unstyled"
+                                                    size="xl"
+                                                    value={parseFloat(maxPrice.toFixed(2))}
+                                                    onChange={(event) => setMaxPrice(Number(event.target.value))}
+                                                    onBlur={() => 
+                                                    {
+                                                        setMaxPrice((prev2) => 
+                                                        {
+                                                            let newMaxPrice = prev2
+
+                                                            if (newMaxPrice < minPrice + 10) 
+                                                            {
+                                                                newMaxPrice = minPrice + 10
+                                                            } 
+                                                            else if (newMaxPrice > highestPrice) 
+                                                            {
+                                                                newMaxPrice = highestPrice
+                                                            }
+                                                            
+                                                            return newMaxPrice
+                                                        })
+                                                    }}
+                                                    />
+                                                    <Text c="#4f0099" size="sm">NEAR per ETH</Text>
+                                                </Box>
+
+                                                <Stack>
+                                                    <ActionIcon radius="xl">
+                                                        <IconPlus size={20} />
+                                                    </ActionIcon>
+                                                    <ActionIcon radius="xl">
+                                                        <IconMinus size={20} />
+                                                    </ActionIcon>
+                                                </Stack>
+                                            </Flex>
+                                        </Card>
+                                    </Grid.Col>
+                                </Grid>
+
+                                <Text size="lg" fw={600} c="#4f0099" mt={30}>Deposit tokens</Text>
+                                <Text mt={10} size="sm" c="gray">Specify the token amounts for your liquidity contribution.</Text>
+
+                                <Textarea 
+                                mt={20}
+                                size='xl'
+                                placeholder="0"
+                                autosize={false}
+                                minRows={3}
+                                rightSection=
+                                {
+                                    <ActionIcon radius="xl">
+                                        <IconCoinFilled size={40} />
+                                    </ActionIcon>
+                                }
+                                rightSectionWidth={100}
+                                />
+
+                                <Textarea 
+                                mt={20}
+                                size='xl'
+                                placeholder="0"
+                                autosize={false} 
+                                minRows={3} 
+                                rightSection=
+                                {
+                                    <ActionIcon radius="xl">
+                                        <IconCoinFilled size={40} />
+                                    </ActionIcon>
+                                }
+                                rightSectionWidth={100}
+                                />
+
+                                <Button fullWidth radius="md" className= "mt-[10%]">Connect wallet</Button>
+
+                            </Card>
+
+                        </Box>
+                    </Grid.Col>
+                )}
+
+            </Grid>
+
+
+        </Box>
+
+
+        
     )
 }
