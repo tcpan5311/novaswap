@@ -1,9 +1,24 @@
 "use client"
 import { useState, useRef, useEffect } from 'react'
-import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea} from '@mantine/core'
+import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton} from '@mantine/core'
 // import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
-import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown } from '@tabler/icons-react'
+import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage } from '@tabler/icons-react'
+import { useDisclosure } from '@mantine/hooks'
+
+    const cryptocurrencies: string[] = 
+    [
+        "Bitcoin (BTC)",
+        "Solana (SOL)",
+        "Ethereum (ETH)",
+        "Ripple (XRP)",
+        "Binance Coin (BNB)",
+        "Uniswap (UNI)",
+        "Monero (XMR)",
+        "Dogecoin (DOGE)",
+        "Tether (USDT)",
+        "Cardano (ADA)",
+    ]
 
     const data = 
     [
@@ -50,7 +65,25 @@ import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown } from '@tabler/ic
 
 export default function PositionCreate() 
 {
+    //For appending of token list
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const [query, setQuery] = useState('');
+    const [hovered, setHovered] = useState(-1);
+    const filtered = cryptocurrencies.filter((item) => item.toLowerCase().includes(query.toLowerCase()));
+    const items = filtered.map((item, index) => 
+    (
+      <UnstyledButton
+        data-list-item
+        key={item}
+        display="block"
+        w="100%"
+        p={5}
+      >
+        {item}
+      </UnstyledButton>
+    ))
 
+    //For setting liquidity price range
     let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
 
     const [minPrice, setMinPrice] = useState(2700)
@@ -59,7 +92,10 @@ export default function PositionCreate()
     
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
-    
+
+    //For handling of modal opening and closing
+    const [opened1, { open: open1, close: close1 }] = useDisclosure(false)
+    const [opened2, { open: open2, close: close2 }] = useDisclosure(false)
     
     useEffect(() => 
     {
@@ -139,26 +175,39 @@ export default function PositionCreate()
         
     }, [draggingType])
     
+    //Stepper functions
     const [stepActive, setStepActive] = useState(1)
     const [highestStepVisited, setHighestStepVisited] = useState(stepActive)
 
     const HandleStepChange = (nextStep: number) => 
     {
-        const isOutOfBounds = nextStep > 2 || nextStep <= 0
-
-        if (isOutOfBounds) 
-        {
-            return
-        }
-
-        setStepActive(nextStep)
+        const isOutOfBounds = nextStep > 2 || nextStep < 0 // Allow step 0
+        if (isOutOfBounds) return
+    
+        setStepActive(nextStep + 1)
         setHighestStepVisited((hSC) => Math.max(hSC, nextStep))
     }
-    const shouldAllowSelectStep = (step: number) => highestStepVisited >= step && stepActive !== step
+    
+    const shouldAllowSelectStep = (step: number) => highestStepVisited >= step
+    
+    const handleStepClick = (step: number) => 
+    {
+        if (shouldAllowSelectStep(step)) 
+        {
+            setStepActive(step + 1)
+        }
+    }
 
+    //Toggle visibility of set fee component
+    const [isVisible, setIsVisible] = useState(false)
+
+    const toggleVisibility = () => 
+    {
+      setIsVisible((prev) => !prev)
+    }
 
     return (
-        <Box>
+        <>
 
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>
@@ -177,32 +226,27 @@ export default function PositionCreate()
 
                 <Grid.Col span={{ base: 10, md: 10, lg: 4 }} mt={7}>
                     <Card shadow="sm" padding="lg" radius="md" withBorder>
-                        <Stepper active={stepActive} onStepClick={setStepActive} orientation='vertical'>
+                        <Stepper active={stepActive} onStepClick={handleStepClick} orientation='vertical'>
                             <Stepper.Step
-                            label="Step 1"
-                            description="Select token pair and fees"
-                            allowStepSelect={shouldAllowSelectStep(0)}
-                            >
-                            </Stepper.Step>
-
+                                label="Step 1"
+                                description="Select token pair and fees"
+                                allowStepSelect={shouldAllowSelectStep(1)}
+                            />
                             <Stepper.Step
-                            label="Step 2"
-                            description="Set price range and deposit amount"
-                            allowStepSelect={shouldAllowSelectStep(1)}
-                            >
-                            </Stepper.Step>
-
+                                label="Step 2"
+                                description="Set price range and deposit amount"
+                            />
                             <Stepper.Completed>
                                 You are all set to add a new position!
                             </Stepper.Completed>
                         </Stepper>
 
-                            <Group justify="center" mt="xl">
+                            {/* <Group justify="center" mt="xl">
                             <Button variant="default" onClick={() => HandleStepChange(stepActive - 1)}>
                                 Back
                             </Button>
                             <Button onClick={() => HandleStepChange(stepActive + 1)}>Next step</Button>
-                            </Group>
+                            </Group> */}
                     </Card>
                 </Grid.Col>
 
@@ -222,13 +266,13 @@ export default function PositionCreate()
                                 <MultiSelect
                                 data={[]}
                                 placeholder="Select token"
-                                onDropdownOpen={() => console.log("Hello, World!")}
+                                onDropdownOpen={() => open1()}
                                 />
 
                                 <MultiSelect
                                 data={[]}
                                 placeholder="Select token"
-                                onDropdownOpen={() => console.log("Hello, World!")}
+                                onDropdownOpen={() => open2()}
                                 />
                             </Flex>
 
@@ -246,12 +290,24 @@ export default function PositionCreate()
                                             The % you earn in fees
                                             </Text>
                                         </Box>
-                                        <Button rightSection={<IconChevronDown size={16} />}>
+                                        <Button rightSection={<IconChevronDown size={16} />} onClick={toggleVisibility}>
                                             More
                                         </Button>
                                     </Group>
+                                    
                                 </Stack>
+                                
                             </Card>
+
+                            {isVisible && (
+                                <Input
+                                placeholder="Fee"
+                                rightSection={<IconPercentage size={20} />} 
+                                mt={20}
+                                />
+                            )}
+
+                            <Button fullWidth radius="md" className= "mt-[5%]" onClick={() => HandleStepChange(stepActive)}>Continue</Button>
 
                         </Card>
                     </Grid.Col>
@@ -360,18 +416,18 @@ export default function PositionCreate()
                                                     {
                                                         setMinPrice((prev1) => 
                                                         {
-                                                            let newMinPrice = prev1;
+                                                            let newMinPrice = prev1
 
                                                             if (newMinPrice > maxPrice - 10) 
                                                             {
-                                                                newMinPrice = maxPrice - 10;
+                                                                newMinPrice = maxPrice - 10
                                                             } 
                                                             else if (newMinPrice < lowestPrice) 
                                                             {
-                                                                newMinPrice = lowestPrice;
+                                                                newMinPrice = lowestPrice
                                                             }
 
-                                                            return newMinPrice;
+                                                            return newMinPrice
                                                         })
                                                     }}
                                                     />
@@ -479,10 +535,54 @@ export default function PositionCreate()
 
             </Grid>
 
+            <Modal
+            opened={opened1}
+            onClose={close1}
+            title={<Text fw={750} c="#4f0099">Select a token</Text>}
+            closeOnClickOutside={false}
+            closeOnEscape={false}
+            size="md"
+            centered
+            >
+                <Input
+                placeholder="Search token"
+                leftSection={<IconSearch size={16} />}
+                value={query}
+                onChange={(event) => 
+                {
+                  setQuery(event.currentTarget.value);
+                  setHovered(-1);
+                }}
+                />
+                <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
+                    {items}
+                </ScrollArea>
+            </Modal>
 
-        </Box>
+            <Modal
+            opened={opened2}
+            onClose={close2}
+            title={<Text fw={750} c="#4f0099">Select a token</Text>}
+            closeOnClickOutside={false}
+            closeOnEscape={false}
+            size="md"
+            centered
+            >
+                <Input
+                placeholder="Search token"
+                leftSection={<IconSearch size={16} />}
+                onChange={(event) => 
+                {
+                    setQuery(event.currentTarget.value);
+                    setHovered(-1);
+                }}
+                />
+                <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
+                    {items}
+                </ScrollArea>
+            </Modal>
 
+        </>
 
-        
     )
 }
