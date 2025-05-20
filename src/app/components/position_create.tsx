@@ -7,7 +7,9 @@ import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconP
 import { useDisclosure } from '@mantine/hooks'
 import { ethers } from 'ethers'
 import { useRouter } from 'next/navigation';
+import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
+import UniswapV3Factory from '../../../contracts/UniswapV3Factory.json'
 
     type CryptocurrencyDetail = 
     {
@@ -78,6 +80,7 @@ export default function PositionCreate()
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken2, setSelectedToken2] = useState<CryptocurrencyDetail | null>(null)
     const [fee, setFee] = useState<number | null>(null)
+    const {account, isConnected, connectWallet} = UseBlockchain()
 
     const links = 
     [
@@ -258,7 +261,7 @@ export default function PositionCreate()
         const isOutOfBounds = nextStep < 0 || nextStep > 2
         if (isOutOfBounds) return
 
-        if (nextStep === 1) 
+        if (nextStep < stepActive)
         {
             setSelectedToken1(null)
             setSelectedToken2(null)
@@ -268,7 +271,6 @@ export default function PositionCreate()
         setStepActive(nextStep + 1)
         setHighestStepVisited(prev => Math.max(prev, nextStep))
 
-        console.log(selectedToken1, selectedToken2, fee)
     }
 
     const handleStepClick = (step: number) => 
@@ -279,21 +281,32 @@ export default function PositionCreate()
         {
             if(validateFirstStep(selectedToken1, selectedToken2, fee)) 
             {
-            setStepActive(step + 1)
+                setStepActive(step + 1)
             }
         } 
         else 
         {
+            if (step === 0) 
+            {
+                setSelectedToken1(null);
+                setSelectedToken2(null);
+                setFee(null);
+            }
             setStepActive(step + 1)
         }
     }
 
     //Toggle visibility of set fee component
-    const [isVisible, setIsVisible] = useState(false)
+    const [isVisible, setIsVisible] = useState(true)
 
     const toggleVisibility = () => 
     {
       setIsVisible((prev) => !prev)
+    }
+
+    const handleClick = () => 
+    {
+        console.log(selectedToken1, selectedToken2, fee)
     }
 
     return (
@@ -394,7 +407,7 @@ export default function PositionCreate()
                                     <Group wrap="wrap" justify='space-between'>
                                         <Box>
                                             <Text size="md" fw={600} c="#4f0099">
-                                            5% fee tier
+                                            Select fee tier
                                             </Text>
                                             <Text size="sm" c="gray">
                                             The % you earn in fees
@@ -448,7 +461,26 @@ export default function PositionCreate()
 
                             )}
 
-                            <Button fullWidth radius="md" className= "mt-[5%]" onClick={() => handleStepChange(stepActive)} disabled={!validateFirstStep(selectedToken1, selectedToken2, fee)}>Continue</Button>
+                            {isConnected ? (
+                            <Button
+                                fullWidth
+                                radius="md"
+                                className="mt-[5%]"
+                                onClick={() => handleStepChange(stepActive)}
+                                disabled={!validateFirstStep(selectedToken1, selectedToken2, fee)}
+                            >
+                                Continue
+                            </Button>
+                            ) : (
+                            <Button
+                                fullWidth
+                                radius="md"
+                                className="mt-[5%]"
+                                onClick={connectWallet} // replace with your wallet connection function
+                            >
+                                Connect Wallet
+                            </Button>
+                            )}
 
                         </Card>
                     </Grid.Col>
@@ -682,7 +714,26 @@ export default function PositionCreate()
                                         rightSectionWidth={100}
                                         />
 
-                                        <Button fullWidth radius="md" className= "mt-[10%]">Connect wallet</Button>
+                                        {isConnected ? (
+                                        <Button
+                                            fullWidth
+                                            radius="md"
+                                            className="mt-[5%]"
+                                            onClick={handleClick}
+                                            // disabled={}
+                                        >
+                                            Continue
+                                        </Button>
+                                        ) : (
+                                        <Button
+                                            fullWidth
+                                            radius="md"
+                                            className="mt-[5%]"
+                                            onClick={connectWallet} // replace with your wallet connection function
+                                        >
+                                            Connect Wallet
+                                        </Button>
+                                        )}
                                 </>
                                 </Tabs.Panel>
 

@@ -4,6 +4,10 @@ import path from 'path'
 import { ethers } from 'ethers'
 import ERC20Mintable from '../../../../contracts/ERC20Mintable.json'
 import UniswapV3Factory from '../../../../contracts/UniswapV3Factory.json'
+import UniswapV3Manager from '../../../../contracts/UniswapV3Manager.json'
+import UniswapV3NFTManager from '../../../../contracts/UniswapV3NFTManager.json'
+import UniswapV3Pool from '../../../../contracts/UniswapV3Pool.json'
+import UniswapV3Quoter from '../../../../contracts/UniswapV3Quoter.json'
 
 export async function POST() {
 
