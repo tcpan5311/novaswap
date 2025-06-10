@@ -1,15 +1,21 @@
 "use client"
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select} from '@mantine/core'
 // import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
 import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage, IconChevronUp } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
+import JSBI from 'jsbi'
 import { ethers } from 'ethers'
 import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Factory from '../../../contracts/UniswapV3Factory.json'
+import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
+import UniswapV3Manager from '../../../contracts/UniswapV3Manager.json'
+import UniswapV3NFTManager from '../../../contracts/UniswapV3NFTManager.json'
+import UniswapV3Quoter from '../../../contracts/UniswapV3Quoter.json'
+import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
 
     type CryptocurrencyDetail = 
     {
@@ -20,10 +26,10 @@ import UniswapV3Factory from '../../../contracts/UniswapV3Factory.json'
 
     const feeStructure = 
     [
-        { value: 0.01, description: 'Best for very stable pairs.' },
-        { value: 0.05, description: 'Best for stable pairs.' },
-        { value: 0.3, description: 'Best for most pairs.' },
-        { value: 1, description: 'Best for exotic pairs.' },
+        { label: 0.01, value: 100, description: 'Best for very stable pairs.' },
+        { label: 0.05, value: 500, description: 'Best for stable pairs.' },
+        { label: 0.3, value: 3000, description: 'Best for most pairs.' },
+        { label: 1, value: 10000, description: 'Best for exotic pairs.' },
     ]
 
     const data = 
@@ -51,6 +57,20 @@ import UniswapV3Factory from '../../../contracts/UniswapV3Factory.json'
 
         return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee)
     }
+
+    const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: number | null, token2Amount: number | null): boolean => 
+    {
+        if (!validateFirstStep(token1, token2, fee)) 
+        {
+            return false
+        }
+
+        const isPriceValid = (min: number, max: number): boolean => !isNaN(min) && !isNaN(max) && min >= 0 && max >= min
+        const isAmountValid = (amount: number | null): boolean => amount !== null && !isNaN(amount) && amount > 0
+
+        return (isPriceValid(minPrice, maxPrice) && isAmountValid(token1Amount) && isAmountValid(token2Amount))
+    }
+
 
     const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
     {
@@ -80,7 +100,12 @@ export default function PositionCreate()
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken2, setSelectedToken2] = useState<CryptocurrencyDetail | null>(null)
     const [fee, setFee] = useState<number | null>(null)
-    const {account, isConnected, connectWallet} = UseBlockchain()
+    const {account, provider, signer, isConnected, connectWallet} = UseBlockchain()
+    const [factoryContractAddress, setFactoryContractAddress] = useState('')
+    const [managerContractAddress, setManagerContractAddress] = useState('')
+    const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
+    const [quoterContractAddress, setQuoterContractAddress] = useState('')
+    
 
     const links = 
     [
@@ -116,8 +141,14 @@ export default function PositionCreate()
 
     const [minPrice, setMinPrice] = useState(2700)
     const [maxPrice, setMaxPrice] = useState(3100)
-    
-    
+
+    const [token1Amount, setToken1Amount] = useState<number | null>(null)
+    const [token2Amount, setToken2Amount] = useState<number | null>(null)
+
+    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
+    const [usdcContractAddress, setUsdcContractAddress] = useState("")
+    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
+
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
     
@@ -144,6 +175,10 @@ export default function PositionCreate()
                     const usdcContract = new ethers.Contract(json.data.USDCAddress, ERC20Mintable.abi, wallet)
                     const uniswapContract = new ethers.Contract(json.data.UniswapAddress, ERC20Mintable.abi, wallet)
 
+                    setEthereumContractAddress(json.data.EthereumAddress)
+                    setUsdcContractAddress(json.data.USDCAddress)
+                    setUniswapContractAddress(json.data.UniswapAddress)
+
                     const ethereumName = await ethereumContract.name()
                     const ethereumSymbol = await ethereumContract.symbol()
 
@@ -152,6 +187,11 @@ export default function PositionCreate()
 
                     const uniswapName = await uniswapContract.name()
                     const uniswapSymbol = await uniswapContract.symbol()
+
+                    setFactoryContractAddress(json.data.UniswapV3FactoryAddress)
+                    setManagerContractAddress(json.data.UniswapV3ManagerAddress)
+                    setNftManagerContractAddress(json.data.UniswapV3NFTManagerAddress)
+                    setQuoterContractAddress(json.data.UniswapV3QuoterAddress)
 
                     cryptocurrencies = 
                     [
@@ -246,6 +286,25 @@ export default function PositionCreate()
         }
     
     }, [draggingType])
+
+    //Contract initialization
+    const ethereumContract = useMemo(() => 
+    {
+        if (!ethereumContractAddress || !signer) return null
+        return new ethers.Contract(ethereumContractAddress, ERC20Mintable.abi, signer)
+    }, [ethereumContractAddress, signer])
+
+    const usdcContract = useMemo(() => 
+    {
+        if (!usdcContractAddress || !signer) return null
+        return new ethers.Contract(usdcContractAddress, ERC20Mintable.abi, signer)
+    }, [usdcContractAddress, signer])
+
+    const uniswapContract = useMemo(() => 
+    {
+        if (!uniswapContractAddress || !signer) return null
+        return new ethers.Contract(uniswapContractAddress, ERC20Mintable.abi, signer)
+    }, [uniswapContractAddress, signer])
     
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
@@ -304,13 +363,137 @@ export default function PositionCreate()
       setIsVisible((prev) => !prev)
     }
 
-    const handleClick = () => 
+    //Helper functions
+    const priceToSqrtPBigNumber = (price: number): bigint => 
     {
-        console.log(selectedToken1, selectedToken2, fee)
+        const jsbi = encodeSqrtRatioX96(JSBI.BigInt(price), JSBI.BigInt(1))
+        return BigInt(jsbi.toString()) 
+    }
+    const priceToSqrtP = (price: number) => encodeSqrtRatioX96(price, 1)
+    const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
+
+    const addLiquidity = async () => 
+    {
+        if (!signer || !isConnected) return
+        
+        const factoryContract = new ethers.Contract(factoryContractAddress, UniswapV3Factory.abi, signer)
+        const factoryCreatePoolTx = await factoryContract.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+        const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
+
+        const poolAddress = await factoryContract.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+
+        if (!poolAddress || poolAddress === "0x0000000000000000000000000000000000000000") 
+        {
+            throw new Error("Failed to retrieve pool address from getPoolAddress()")
+        }
+
+        console.log("Pool deployed at:", poolAddress)
+        const poolCallContract = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
+
+        const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
+        const poolInitializeTx = await poolCallContract.initialize(sqrtPriceX96)
+        const poolInitializeTxReceipt = await poolInitializeTx.wait()
+
+        const nftManagerContract = new ethers.Contract(nftManagerContractAddress, UniswapV3NFTManager.abi, signer)
+
+        await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
+        await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
+
+        const mintParams = 
+        {
+            recipient: await signer.getAddress(),
+            tokenA: selectedToken1?.Address,
+            tokenB: selectedToken2?.Address,
+            fee: fee,
+            lowerTick: nearestUsableTick(priceToTick(4545), 60),
+            upperTick: nearestUsableTick(priceToTick(5500), 60),
+            amount0Desired: ethers.parseEther("1"),
+            amount1Desired: ethers.parseEther("5000"),
+            amount0Min: 0,
+            amount1Min: 0,
+        }
+
+        const nftManagerMintLiquidity = await nftManagerContract.mint(mintParams)
+        const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+        console.log(nftManagerMintLiquidityTx)
+    }
+
+    const quotePool = async () => 
+    {
+        try
+        {
+            console.log(quoterContractAddress)
+            const quoterContract = new ethers.Contract(quoterContractAddress, UniswapV3Quoter.abi, signer)
+
+            const quoteParams =
+            {
+                tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+                fee: 3000,
+                amountIn: ethers.parseEther("0.1337"),
+                sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
+            }
+
+            const [amountOut, sqrtPriceX96After, tickAfter] = await quoterContract.quoteSingle.staticCall(quoteParams)
+            console.log("amountOut:", ethers.formatUnits(amountOut, 18)) 
+            console.log("sqrtPriceX96After:", sqrtPriceX96After.toString())
+            console.log("tickAfter:", tickAfter.toString())
+        }
+        catch(error)
+        {
+            console.log(error)
+        }
+
+
+    }
+
+    const swapToken = async () => 
+    {
+        try
+        {
+            const managerContract = new ethers.Contract(managerContractAddress, UniswapV3Manager.abi, signer)
+            
+            await ethereumContract?.approve(managerContractAddress,ethers.parseEther("1"))
+
+            const swapParams = 
+            {
+                tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+                fee: 3000,
+                amountIn: ethers.parseEther("0.1337"),
+                sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
+            }
+
+            const managerContractSwap = await managerContract.swapSingle(swapParams)
+            const managerContractSwapTx = await managerContractSwap.wait()
+            console.log(managerContractSwapTx)
+        }
+        catch(error) 
+        {
+            console.log(error)
+        }
+
     }
 
     return (
         <>
+<Button
+fullWidth
+radius="md"
+className="mt-[5%]"
+onClick={quotePool}
+>
+Test quote
+</Button>
+
+<Button
+fullWidth
+radius="md"
+className="mt-[5%]"
+onClick={swapToken}
+>
+Test swap
+</Button>
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>
                     <Box className="flex flex-wrap p-4">
@@ -433,7 +616,7 @@ export default function PositionCreate()
                                 // />
 
                                 <Flex justify="center" align="center" gap="xs" mt="md" className="mt-4 gap-2">
-                                {feeStructure.map(({ value, description }) => 
+                                {feeStructure.map(({ label, value, description }) => 
                                 {   
                                     const isSelected = fee === value
                                     return (
@@ -447,7 +630,7 @@ export default function PositionCreate()
                                     style={{backgroundColor: isSelected ? '#e0bfff' : undefined,}}
                                     >
                                     <Text size="sm" c="#4f0099" fw={700}>
-                                        {value}%
+                                        {label}%
                                     </Text>
                                     <Text size="xs" c="black" fw={400} mt={4}>
                                         {description}
@@ -684,31 +867,37 @@ export default function PositionCreate()
                                         <Text size="lg" fw={600} c="#4f0099" mt={30}>Deposit tokens</Text>
                                         <Text mt={10} size="sm" c="gray">Specify the token amounts for your liquidity contribution.</Text>
 
-                                        <Textarea 
+                                        <Input
                                         mt={20}
-                                        size='xl'
+                                        size="xl"
                                         placeholder="0"
-                                        autosize={false}
-                                        minRows={3}
-                                        rightSection=
-                                        {
+                                        value={token1Amount !== null ? token1Amount.toString() : ''}
+                                        onChange={(event) => {
+                                            const input = event.currentTarget.value;
+                                            const parsed = parseFloat(input);
+                                            setToken1Amount(input === '' || isNaN(parsed) ? null : parsed);
+                                        }}
+                                        rightSection={
                                             <ActionIcon radius="xl">
-                                                <IconCoinFilled size={40} />
+                                            <IconCoinFilled size={40} />
                                             </ActionIcon>
                                         }
                                         rightSectionWidth={100}
                                         />
 
-                                        <Textarea 
+                                        <Input
                                         mt={20}
-                                        size='xl'
+                                        size="xl"
                                         placeholder="0"
-                                        autosize={false} 
-                                        minRows={3} 
-                                        rightSection=
-                                        {
+                                        value={token2Amount !== null ? token2Amount.toString() : ''}
+                                        onChange={(event) => {
+                                            const input = event.currentTarget.value;
+                                            const parsed = parseFloat(input);
+                                            setToken2Amount(input === '' || isNaN(parsed) ? null : parsed);
+                                        }}
+                                        rightSection={
                                             <ActionIcon radius="xl">
-                                                <IconCoinFilled size={40} />
+                                            <IconCoinFilled size={40} />
                                             </ActionIcon>
                                         }
                                         rightSectionWidth={100}
@@ -719,10 +908,14 @@ export default function PositionCreate()
                                             fullWidth
                                             radius="md"
                                             className="mt-[5%]"
-                                            onClick={handleClick}
-                                            // disabled={}
+                                            disabled={!validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)}
+                                            onClick={addLiquidity}
                                         >
-                                            Continue
+                                            {
+                                                validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
+                                                ? 'Continue'
+                                                : 'Incomplete fields'
+                                            }
                                         </Button>
                                         ) : (
                                         <Button
@@ -734,6 +927,7 @@ export default function PositionCreate()
                                             Connect Wallet
                                         </Button>
                                         )}
+
                                 </>
                                 </Tabs.Panel>
 
