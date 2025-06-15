@@ -10,11 +10,6 @@ import { ethers } from 'ethers'
 import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
-import UniswapV3Factory from '../../../contracts/UniswapV3Factory.json'
-import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
-import UniswapV3Manager from '../../../contracts/UniswapV3Manager.json'
-import UniswapV3NFTManager from '../../../contracts/UniswapV3NFTManager.json'
-import UniswapV3Quoter from '../../../contracts/UniswapV3Quoter.json'
 import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
 
     type CryptocurrencyDetail = 
@@ -34,13 +29,14 @@ import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk
 
     const data = 
     [
-        { date: "Mar 22", Price: 2500 },
-        { date: "Mar 23", Price: 2650 },
-        { date: "Mar 24", Price: 3500 },
-        { date: "Mar 24", Price: 3100 },
-        { date: "Mar 27", Price: 2950 },
-        { date: "Mar 28", Price: 2800 },
+        { date: "Mar 22", Price: 4325 },
+        { date: "Mar 23", Price: 4650 },
+        { date: "Mar 24", Price: 4800 },
+        { date: "Mar 24", Price: 5000 },
+        { date: "Mar 27", Price: 5150 },
+        { date: "Mar 28", Price: 5475 },
     ]
+
     type data = {date: string; Price: number}
 
     const validateFirstStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null): boolean => 
@@ -58,7 +54,7 @@ import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk
         return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee)
     }
 
-    const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: number | null, token2Amount: number | null): boolean => 
+    const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: string | null, token2Amount: string | null): boolean => 
     {
         if (!validateFirstStep(token1, token2, fee)) 
         {
@@ -66,11 +62,11 @@ import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk
         }
 
         const isPriceValid = (min: number, max: number): boolean => !isNaN(min) && !isNaN(max) && min >= 0 && max >= min
-        const isAmountValid = (amount: number | null): boolean => amount !== null && !isNaN(amount) && amount > 0
+        const isAmountValid = (amount: string | null): boolean => amount !== null && amount.trim() !== '' && !isNaN(Number(amount)) && Number(amount) > 0
 
         return (isPriceValid(minPrice, maxPrice) && isAmountValid(token1Amount) && isAmountValid(token2Amount))
     }
-
+    
 
     const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
     {
@@ -100,12 +96,23 @@ export default function PositionCreate()
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken2, setSelectedToken2] = useState<CryptocurrencyDetail | null>(null)
     const [fee, setFee] = useState<number | null>(null)
-    const {account, provider, signer, isConnected, connectWallet} = UseBlockchain()
+    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+
+    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
+    const [usdcContractAddress, setUsdcContractAddress] = useState("")
+    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
     const [factoryContractAddress, setFactoryContractAddress] = useState('')
     const [managerContractAddress, setManagerContractAddress] = useState('')
     const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [quoterContractAddress, setQuoterContractAddress] = useState('')
-    
+
+    const [ethereumContract, setEthereumContract] = useState<ethers.Contract | null>(null)
+    const [usdcContract, setUsdcContract] = useState<ethers.Contract | null>(null)
+    const [uniswapContract, setUniswapContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3ManagerContract, setUniswapV3ManagerContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3QuoterContract, setUniswapV3QuoterContract] = useState<ethers.Contract | null>(null)
 
     const links = 
     [
@@ -139,125 +146,156 @@ export default function PositionCreate()
     //For setting liquidity price range
     let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
 
-    const [minPrice, setMinPrice] = useState(2700)
-    const [maxPrice, setMaxPrice] = useState(3100)
+    const [minPrice, setMinPrice] = useState(4400)
+    const [maxPrice, setMaxPrice] = useState(5500)
 
-    const [token1Amount, setToken1Amount] = useState<number | null>(null)
-    const [token2Amount, setToken2Amount] = useState<number | null>(null)
-
-    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
-    const [usdcContractAddress, setUsdcContractAddress] = useState("")
-    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
+    const [token1Amount, setToken1Amount] = useState<string>('')
+    const [token2Amount, setToken2Amount] = useState<string>('')
 
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
     
     useEffect(() => 
     {
-
-        async function fetchDeployment() 
+        async function loadData() 
         {
-            try 
+            if (signer && deploymentAddresses && contracts) 
             {
-                const res = await fetch('/api/position_create')
-                if (!res.ok) 
-                {
-                    throw new Error(`HTTP error! status: ${res.status}`)
-                }
-                const json = await res.json()
-                if (json.success) 
-                {
-                    const provider = new ethers.JsonRpcProvider('http://localhost:8545')
-                    const privateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-                    const wallet = new ethers.Wallet(privateKey, provider)
-                    
-                    const ethereumContract = new ethers.Contract(json.data.EthereumAddress, ERC20Mintable.abi, wallet)
-                    const usdcContract = new ethers.Contract(json.data.USDCAddress, ERC20Mintable.abi, wallet)
-                    const uniswapContract = new ethers.Contract(json.data.UniswapAddress, ERC20Mintable.abi, wallet)
+                setEthereumContractAddress(deploymentAddresses?.EthereumAddress ?? "")
+                setUsdcContractAddress(deploymentAddresses?.USDCAddress ?? "")
+                setUniswapContractAddress(deploymentAddresses?.UniswapAddress ?? "")
+                setFactoryContractAddress(deploymentAddresses?.UniswapV3FactoryAddress ?? "")
+                setManagerContractAddress(deploymentAddresses?.UniswapV3ManagerAddress ?? "")
+                setNftManagerContractAddress(deploymentAddresses?.UniswapV3NFTManagerAddress ?? "")
+                setQuoterContractAddress(deploymentAddresses?.UniswapV3QuoterAddress ?? "")
 
-                    setEthereumContractAddress(json.data.EthereumAddress)
-                    setUsdcContractAddress(json.data.USDCAddress)
-                    setUniswapContractAddress(json.data.UniswapAddress)
+                setEthereumContract(contracts?.EthereumContract ?? null)
+                setUsdcContract(contracts?.USDCContract ?? null)
+                setUniswapContract(contracts?.UniswapContract ?? null)
+                setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
+                setUniswapV3ManagerContract(contracts?.UniswapV3ManagerContract ?? null)
+                setUniswapV3NFTManagerContract(contracts?.UniswapV3NFTManagerContract ?? null)
+                setUniswapV3QuoterContract(contracts?.UniswapV3QuoterContract ?? null)
 
-                    const ethereumName = await ethereumContract.name()
-                    const ethereumSymbol = await ethereumContract.symbol()
+            // if (contracts?.EthereumContract && contracts?.USDCContract && contracts?.UniswapContract) 
+            // {
+                const [ethereumName, ethereumSymbol, usdcName, usdcSymbol, uniswapName, uniswapSymbol] = 
+                await Promise.all([contracts.EthereumContract?.name(), contracts.EthereumContract?.symbol(), contracts.USDCContract?.name(), contracts.USDCContract?.symbol(), contracts.UniswapContract?.name(), contracts.UniswapContract?.symbol()])
 
-                    const usdcName = await usdcContract.name()
-                    const usdcSymbol = await usdcContract.symbol()
-
-                    const uniswapName = await uniswapContract.name()
-                    const uniswapSymbol = await uniswapContract.symbol()
-
-                    setFactoryContractAddress(json.data.UniswapV3FactoryAddress)
-                    setManagerContractAddress(json.data.UniswapV3ManagerAddress)
-                    setNftManagerContractAddress(json.data.UniswapV3NFTManagerAddress)
-                    setQuoterContractAddress(json.data.UniswapV3QuoterAddress)
-
-                    cryptocurrencies = 
-                    [
-                        { Label: `${ethereumName} (${ethereumSymbol})`, Address: json.data.EthereumAddress },
-                        { Label: `${usdcName} (${usdcSymbol})`, Address: json.data.USDCAddress },
-                        { Label: `${uniswapName} (${uniswapSymbol})`, Address: json.data.UniswapAddress },
-                    ]
-                } 
-                else 
-                {
-                    console.log(json.error || 'Unknown error')
-                }
-            } 
-            catch (err: any) 
-            {
-                console.log(err.message)
-            } 
+                cryptocurrencies = 
+                [
+                    { Label: `${ethereumName} (${ethereumSymbol})`, Address: deploymentAddresses?.EthereumAddress ?? ""},
+                    { Label: `${usdcName} (${usdcSymbol})`, Address: deploymentAddresses?.USDCAddress ?? ""},
+                    { Label: `${uniswapName} (${uniswapSymbol})`,  Address: deploymentAddresses?.UniswapAddress ?? "" },
+                ]
+            // }
         }
-        fetchDeployment()
+
+            // try 
+            // {
+            //     const res = await fetch('/api/position_create')
+            //     if (!res.ok) 
+            //     {
+            //         throw new Error(`HTTP error! status: ${res.status}`)
+            //     }
+            //     const json = await res.json()
+            //     if (json.success) 
+            //     {
+            //         const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+            //         const privateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+            //         const wallet = new ethers.Wallet(privateKey, provider)
+                    
+            //         const ethereumContract = new ethers.Contract(json.data.EthereumAddress, ERC20Mintable.abi, wallet)
+            //         const usdcContract = new ethers.Contract(json.data.USDCAddress, ERC20Mintable.abi, wallet)
+            //         const uniswapContract = new ethers.Contract(json.data.UniswapAddress, ERC20Mintable.abi, wallet)
+
+            //         setEthereumContractAddress(json.data.EthereumAddress)
+            //         setUsdcContractAddress(json.data.USDCAddress)
+            //         setUniswapContractAddress(json.data.UniswapAddress)
+
+            //         const ethereumName = await ethereumContract.name()
+            //         const ethereumSymbol = await ethereumContract.symbol()
+
+            //         const usdcName = await usdcContract.name()
+            //         const usdcSymbol = await usdcContract.symbol()
+
+            //         const uniswapName = await uniswapContract.name()
+            //         const uniswapSymbol = await uniswapContract.symbol()
+
+            //         setFactoryContractAddress(json.data.UniswapV3FactoryAddress)
+            //         setManagerContractAddress(json.data.UniswapV3ManagerAddress)
+            //         setNftManagerContractAddress(json.data.UniswapV3NFTManagerAddress)
+            //         setQuoterContractAddress(json.data.UniswapV3QuoterAddress)
+
+            //         cryptocurrencies = 
+            //         [
+            //             { Label: `${ethereumName} (${ethereumSymbol})`, Address: json.data.EthereumAddress },
+            //             { Label: `${usdcName} (${usdcSymbol})`, Address: json.data.USDCAddress },
+            //             { Label: `${uniswapName} (${uniswapSymbol})`, Address: json.data.UniswapAddress },
+            //         ]
+            //     } 
+            //     else 
+            //     {
+            //         console.log(json.error || 'Unknown error')
+            //     }
+            // } 
+            // catch (err: any) 
+            // {
+            //     console.log(err.message)
+            // } 
+        }
+        loadData()
     
-        const handleMinPriceMove = (event: MouseEvent) => 
+        const handleMinPriceMove = async (event: MouseEvent) => 
         {
             if (!chartRef.current) return
-            
-    
+
             const rect = chartRef.current.getBoundingClientRect()
             const offsetY = event.clientY - rect.top
             const chartHeight = rect.height
-            
+
+            const currentPrice = await (getCurrentPoolPrice()) ?? 0
+            const minAllowedPrice = currentPrice * 0.75 
+
             let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-            
+
             if (newMinPrice > maxPrice - 10) 
             {
                 newMinPrice = maxPrice - 10
             } 
-            else if (newMinPrice < lowestPrice) 
+            else if (newMinPrice < minAllowedPrice) 
             {
-                newMinPrice = lowestPrice
+                newMinPrice = minAllowedPrice
             }
-            
+
             setMinPrice(newMinPrice)
         }
 
-        const handleMaxPriceMove = (event: MouseEvent) => 
+        const handleMaxPriceMove = async (event: MouseEvent) => 
         {
             if (!chartRef.current) return
-            
+
             const rect = chartRef.current.getBoundingClientRect()
             const offsetY = event.clientY - rect.top
             const chartHeight = rect.height
-            
+
+            const currentPrice = await (getCurrentPoolPrice()) ?? 0
+            const maxAllowedPrice = currentPrice * 1.25 
+
             let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-            
+
             if (newMaxPrice < minPrice + 10) 
             {
                 newMaxPrice = minPrice + 10
             } 
-            else if (newMaxPrice > highestPrice) 
+            else if (newMaxPrice > maxAllowedPrice) 
             {
-                newMaxPrice = highestPrice
+                newMaxPrice = maxAllowedPrice
             }
-            
+
             setMaxPrice(newMaxPrice)
         }
         
-    
         const handleMouseUp = () => 
         {
             setDraggingType(null)
@@ -285,26 +323,7 @@ export default function PositionCreate()
             document.removeEventListener("mouseup", handleMouseUp)
         }
     
-    }, [draggingType])
-
-    //Contract initialization
-    const ethereumContract = useMemo(() => 
-    {
-        if (!ethereumContractAddress || !signer) return null
-        return new ethers.Contract(ethereumContractAddress, ERC20Mintable.abi, signer)
-    }, [ethereumContractAddress, signer])
-
-    const usdcContract = useMemo(() => 
-    {
-        if (!usdcContractAddress || !signer) return null
-        return new ethers.Contract(usdcContractAddress, ERC20Mintable.abi, signer)
-    }, [usdcContractAddress, signer])
-
-    const uniswapContract = useMemo(() => 
-    {
-        if (!uniswapContractAddress || !signer) return null
-        return new ethers.Contract(uniswapContractAddress, ERC20Mintable.abi, signer)
-    }, [uniswapContractAddress, signer])
+    }, [signer, contracts, deploymentAddresses, draggingType])
     
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
@@ -363,87 +382,199 @@ export default function PositionCreate()
       setIsVisible((prev) => !prev)
     }
 
+    const validateMinPrice = async () => 
+    {
+        const current = await (getCurrentPoolPrice()) ?? 0
+
+        setMinPrice((prev) => {
+            const minAllowed = current * 0.75
+            const maxLimit = maxPrice - 10
+            return Math.max(Math.min(prev, maxLimit), minAllowed)
+        })
+    }
+
+    const validateMaxPrice = async () => 
+    {
+        const current = await (getCurrentPoolPrice()) ?? 0
+        setMaxPrice((prev) => {
+            const maxAllowed = current * 1.25
+            const minLimit = minPrice + 10
+            return Math.min(Math.max(prev, minLimit), maxAllowed)
+        })
+    }
+
     //Helper functions
     const priceToSqrtPBigNumber = (price: number): bigint => 
     {
         const jsbi = encodeSqrtRatioX96(JSBI.BigInt(price), JSBI.BigInt(1))
         return BigInt(jsbi.toString()) 
     }
+
+    const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
+    {
+        const jsbiSqrt = JSBI.BigInt(sqrtPriceX96.toString())
+        const shift = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
+        const ratio = JSBI.toNumber(JSBI.divide(jsbiSqrt, shift))
+        return ratio ** 2
+    }
+
     const priceToSqrtP = (price: number) => encodeSqrtRatioX96(price, 1)
     const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
+
+    const getCurrentPoolPrice = async () => 
+    {
+        if (signer && deploymentAddresses && contracts) 
+        {
+            try 
+            {
+                const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+                const poolCallContract = getPoolContract(poolAddress)
+                const slot0 = await poolCallContract?.slot0()
+                const sqrtPriceX96 = slot0.sqrtPriceX96
+                const price = sqrtPToPriceNumber(sqrtPriceX96)
+                return price
+            } 
+            catch (error) 
+            {
+                console.log(error)
+                return null
+            }
+        }
+    }
+
+    const approveTokenTransaction = async (tokenAddress: string, spenderAddress: string, amount: string, signer: ethers.Signer) => 
+    {
+        const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
+        await approveTokenContract?.approve(spenderAddress, ethers.parseEther(amount))
+    }
 
     const addLiquidity = async () => 
     {
         if (!signer || !isConnected) return
-        
-        const factoryContract = new ethers.Contract(factoryContractAddress, UniswapV3Factory.abi, signer)
-        const factoryCreatePoolTx = await factoryContract.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
-        const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
 
-        const poolAddress = await factoryContract.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+        console.log(contracts)
 
-        if (!poolAddress || poolAddress === "0x0000000000000000000000000000000000000000") 
+        if (signer && deploymentAddresses && contracts) 
         {
-            throw new Error("Failed to retrieve pool address from getPoolAddress()")
+
+            const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+            const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
+            const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+
+            if (poolAddress && poolAddress !== ethers.ZeroAddress) 
+            {
+                const poolCallContract = getPoolContract(poolAddress) 
+                const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
+                const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
+                const poolInitializeTxReceipt = await poolInitializeTx.wait()
+                console.log(poolInitializeTxReceipt)
+                await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
+                await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
+
+                const mintParams = 
+                {
+                    recipient: await signer.getAddress(),
+                    tokenA: selectedToken1?.Address,
+                    tokenB: selectedToken2?.Address,
+                    fee: fee,
+                    lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
+                    upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
+                    amount0Desired: ethers.parseEther(token1Amount), //1
+                    amount1Desired: ethers.parseEther(token2Amount), //5000
+                    amount0Min: 0,
+                    amount1Min: 0,
+                }
+
+                const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+                const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+                console.log(nftManagerMintLiquidityTx)
+            }
+
+            // if (poolAddress && poolAddress !== "0x0000000000000000000000000000000000000000") 
+            // {
+                
+            //     await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
+            //     await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
+
+            //     const mintParams = 
+            //     {
+            //         recipient: await signer.getAddress(),
+            //         tokenA: selectedToken1?.Address,
+            //         tokenB: selectedToken2?.Address,
+            //         fee: fee,
+            //         lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
+            //         upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
+            //         amount0Desired: ethers.parseEther(token1Amount), //1
+            //         amount1Desired: ethers.parseEther(token2Amount), //5000
+            //         amount0Min: 0,
+            //         amount1Min: 0,
+            //     }
+
+            //     const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+            //     const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+            //     console.log(nftManagerMintLiquidityTx)
+            // } 
+            // else if (!poolAddress || poolAddress === "0x0000000000000000000000000000000000000000")
+            // {
+            //     const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+            //     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
+            //     console.log(factoryCreatePoolReceipt)
+            //     const poolCallContract = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
+
+            //     const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
+            //     const poolInitializeTx = await poolCallContract.initialize(sqrtPriceX96)
+            //     const poolInitializeTxReceipt = await poolInitializeTx.wait()
+
+            //     await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
+            //     await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
+
+            //     const mintParams = 
+            //     {
+            //         recipient: await signer.getAddress(),
+            //         tokenA: selectedToken1?.Address,
+            //         tokenB: selectedToken2?.Address,
+            //         fee: fee,
+            //         lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
+            //         upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
+            //         amount0Desired: ethers.parseEther(token1Amount), //1
+            //         amount1Desired: ethers.parseEther(token2Amount), //5000
+            //         amount0Min: 0,
+            //         amount1Min: 0,
+            //     }
+
+            //     const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+            //     const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+            //     console.log(nftManagerMintLiquidityTx)
+                
+            // }
         }
-
-        console.log("Pool deployed at:", poolAddress)
-        const poolCallContract = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-
-        const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
-        const poolInitializeTx = await poolCallContract.initialize(sqrtPriceX96)
-        const poolInitializeTxReceipt = await poolInitializeTx.wait()
-
-        const nftManagerContract = new ethers.Contract(nftManagerContractAddress, UniswapV3NFTManager.abi, signer)
-
-        await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
-        await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
-
-        const mintParams = 
-        {
-            recipient: await signer.getAddress(),
-            tokenA: selectedToken1?.Address,
-            tokenB: selectedToken2?.Address,
-            fee: fee,
-            lowerTick: nearestUsableTick(priceToTick(4545), 60),
-            upperTick: nearestUsableTick(priceToTick(5500), 60),
-            amount0Desired: ethers.parseEther("1"),
-            amount1Desired: ethers.parseEther("5000"),
-            amount0Min: 0,
-            amount1Min: 0,
-        }
-
-        const nftManagerMintLiquidity = await nftManagerContract.mint(mintParams)
-        const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-        console.log(nftManagerMintLiquidityTx)
     }
 
     const quotePool = async () => 
     {
-        try
+        if (signer && deploymentAddresses && contracts) 
         {
-            console.log(quoterContractAddress)
-            const quoterContract = new ethers.Contract(quoterContractAddress, UniswapV3Quoter.abi, signer)
+            try
+            {       
+                const quoteParams =
+                {
+                    tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                    tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+                    fee: 3000,
+                    amountIn: ethers.parseEther("0.1337"),
+                    sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
+                }
 
-            const quoteParams =
-            {
-                tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-                fee: 3000,
-                amountIn: ethers.parseEther("0.1337"),
-                sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
+                const [amountOut, sqrtPriceX96After, tickAfter] = await uniswapV3QuoterContract?.quoteSingle.staticCall(quoteParams)
+                console.log("amountOut:", ethers.formatUnits(amountOut, 18)) 
+                console.log("sqrtPriceX96After:", sqrtPriceX96After.toString())
+                console.log("tickAfter:", tickAfter.toString())
             }
-
-            const [amountOut, sqrtPriceX96After, tickAfter] = await quoterContract.quoteSingle.staticCall(quoteParams)
-            console.log("amountOut:", ethers.formatUnits(amountOut, 18)) 
-            console.log("sqrtPriceX96After:", sqrtPriceX96After.toString())
-            console.log("tickAfter:", tickAfter.toString())
+            catch(error)
+            {
+                console.log(error)
+            }
         }
-        catch(error)
-        {
-            console.log(error)
-        }
-
 
     }
 
@@ -451,8 +582,6 @@ export default function PositionCreate()
     {
         try
         {
-            const managerContract = new ethers.Contract(managerContractAddress, UniswapV3Manager.abi, signer)
-            
             await ethereumContract?.approve(managerContractAddress,ethers.parseEther("1"))
 
             const swapParams = 
@@ -464,7 +593,7 @@ export default function PositionCreate()
                 sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
             }
 
-            const managerContractSwap = await managerContract.swapSingle(swapParams)
+            const managerContractSwap = await uniswapV3ManagerContract?.swapSingle(swapParams)
             const managerContractSwapTx = await managerContractSwap.wait()
             console.log(managerContractSwapTx)
         }
@@ -483,7 +612,7 @@ radius="md"
 className="mt-[5%]"
 onClick={quotePool}
 >
-Test quote
+Test get current pool price
 </Button>
 
 <Button
@@ -784,24 +913,7 @@ Test swap
                                                             size="xl"
                                                             value={parseFloat(minPrice.toFixed(2))}
                                                             onChange={(event) => setMinPrice(Number(event.target.value))}
-                                                            onBlur={() => 
-                                                            {
-                                                                setMinPrice((prev1) => 
-                                                                {
-                                                                    let newMinPrice = prev1
-
-                                                                    if (newMinPrice > maxPrice - 10) 
-                                                                    {
-                                                                        newMinPrice = maxPrice - 10
-                                                                    } 
-                                                                    else if (newMinPrice < lowestPrice) 
-                                                                    {
-                                                                        newMinPrice = lowestPrice
-                                                                    }
-
-                                                                    return newMinPrice
-                                                                })
-                                                            }}
+                                                            onBlur={validateMinPrice}
                                                             />
                                                             <Text c="#4f0099" size="sm">NEAR per ETH</Text>
                                                         </Box>
@@ -829,24 +941,7 @@ Test swap
                                                             size="xl"
                                                             value={parseFloat(maxPrice.toFixed(2))}
                                                             onChange={(event) => setMaxPrice(Number(event.target.value))}
-                                                            onBlur={() => 
-                                                            {
-                                                                setMaxPrice((prev2) => 
-                                                                {
-                                                                    let newMaxPrice = prev2
-
-                                                                    if (newMaxPrice < minPrice + 10) 
-                                                                    {
-                                                                        newMaxPrice = minPrice + 10
-                                                                    } 
-                                                                    else if (newMaxPrice > highestPrice) 
-                                                                    {
-                                                                        newMaxPrice = highestPrice
-                                                                    }
-                                                                    
-                                                                    return newMaxPrice
-                                                                })
-                                                            }}
+                                                            onBlur={validateMaxPrice}
                                                             />
                                                             <Text c="#4f0099" size="sm">NEAR per ETH</Text>
                                                         </Box>
@@ -871,11 +966,14 @@ Test swap
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
-                                        value={token1Amount !== null ? token1Amount.toString() : ''}
-                                        onChange={(event) => {
+                                        value={token1Amount}
+                                        onChange={(event) => 
+                                        {
                                             const input = event.currentTarget.value;
-                                            const parsed = parseFloat(input);
-                                            setToken1Amount(input === '' || isNaN(parsed) ? null : parsed);
+                                            if (/^\d*\.?\d*$/.test(input)) 
+                                            {
+                                                setToken1Amount(input);
+                                            }
                                         }}
                                         rightSection={
                                             <ActionIcon radius="xl">
@@ -889,11 +987,14 @@ Test swap
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
-                                        value={token2Amount !== null ? token2Amount.toString() : ''}
-                                        onChange={(event) => {
+                                        value={token2Amount}
+                                        onChange={(event) => 
+                                        {
                                             const input = event.currentTarget.value;
-                                            const parsed = parseFloat(input);
-                                            setToken2Amount(input === '' || isNaN(parsed) ? null : parsed);
+                                            if (/^\d*\.?\d*$/.test(input)) 
+                                            {
+                                                setToken2Amount(input);
+                                            }
                                         }}
                                         rightSection={
                                             <ActionIcon radius="xl">
