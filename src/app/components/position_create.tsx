@@ -11,6 +11,8 @@ import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
+import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp} from '../utils/price_range_handler'
+import {shouldAllowStep, processStepClick, processStepChange } from '../utils/stepper_handler'
 
     type CryptocurrencyDetail = 
     {
@@ -157,7 +159,7 @@ export default function PositionCreate()
     
     useEffect(() => 
     {
-        async function loadData() 
+        const loadData = async () => 
         {
             if (signer && deploymentAddresses && contracts) 
             {
@@ -189,139 +191,124 @@ export default function PositionCreate()
                     { Label: `${uniswapName} (${uniswapSymbol})`,  Address: deploymentAddresses?.UniswapAddress ?? "" },
                 ]
             // }
-        }
-
-            // try 
-            // {
-            //     const res = await fetch('/api/position_create')
-            //     if (!res.ok) 
-            //     {
-            //         throw new Error(`HTTP error! status: ${res.status}`)
-            //     }
-            //     const json = await res.json()
-            //     if (json.success) 
-            //     {
-            //         const provider = new ethers.JsonRpcProvider('http://localhost:8545')
-            //         const privateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-            //         const wallet = new ethers.Wallet(privateKey, provider)
-                    
-            //         const ethereumContract = new ethers.Contract(json.data.EthereumAddress, ERC20Mintable.abi, wallet)
-            //         const usdcContract = new ethers.Contract(json.data.USDCAddress, ERC20Mintable.abi, wallet)
-            //         const uniswapContract = new ethers.Contract(json.data.UniswapAddress, ERC20Mintable.abi, wallet)
-
-            //         setEthereumContractAddress(json.data.EthereumAddress)
-            //         setUsdcContractAddress(json.data.USDCAddress)
-            //         setUniswapContractAddress(json.data.UniswapAddress)
-
-            //         const ethereumName = await ethereumContract.name()
-            //         const ethereumSymbol = await ethereumContract.symbol()
-
-            //         const usdcName = await usdcContract.name()
-            //         const usdcSymbol = await usdcContract.symbol()
-
-            //         const uniswapName = await uniswapContract.name()
-            //         const uniswapSymbol = await uniswapContract.symbol()
-
-            //         setFactoryContractAddress(json.data.UniswapV3FactoryAddress)
-            //         setManagerContractAddress(json.data.UniswapV3ManagerAddress)
-            //         setNftManagerContractAddress(json.data.UniswapV3NFTManagerAddress)
-            //         setQuoterContractAddress(json.data.UniswapV3QuoterAddress)
-
-            //         cryptocurrencies = 
-            //         [
-            //             { Label: `${ethereumName} (${ethereumSymbol})`, Address: json.data.EthereumAddress },
-            //             { Label: `${usdcName} (${usdcSymbol})`, Address: json.data.USDCAddress },
-            //             { Label: `${uniswapName} (${uniswapSymbol})`, Address: json.data.UniswapAddress },
-            //         ]
-            //     } 
-            //     else 
-            //     {
-            //         console.log(json.error || 'Unknown error')
-            //     }
-            // } 
-            // catch (err: any) 
-            // {
-            //     console.log(err.message)
-            // } 
+            }
         }
         loadData()
-    
-        const handleMinPriceMove = async (event: MouseEvent) => 
+
+        const loadDragHandler = async () => 
         {
-            if (!chartRef.current) return
-
-            const rect = chartRef.current.getBoundingClientRect()
-            const offsetY = event.clientY - rect.top
-            const chartHeight = rect.height
-
             const currentPrice = await (getCurrentPoolPrice()) ?? 0
-            const minAllowedPrice = currentPrice * 0.75 
 
-            let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-            if (newMinPrice > maxPrice - 10) 
+            const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
             {
-                newMinPrice = maxPrice - 10
-            } 
-            else if (newMinPrice < minAllowedPrice) 
-            {
-                newMinPrice = minAllowedPrice
+                await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice)
             }
 
-            setMinPrice(newMinPrice)
-        }
-
-        const handleMaxPriceMove = async (event: MouseEvent) => 
-        {
-            if (!chartRef.current) return
-
-            const rect = chartRef.current.getBoundingClientRect()
-            const offsetY = event.clientY - rect.top
-            const chartHeight = rect.height
-
-            const currentPrice = await (getCurrentPoolPrice()) ?? 0
-            const maxAllowedPrice = currentPrice * 1.25 
-
-            let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-            if (newMaxPrice < minPrice + 10) 
+            const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
             {
-                newMaxPrice = minPrice + 10
-            } 
-            else if (newMaxPrice > maxAllowedPrice) 
-            {
-                newMaxPrice = maxAllowedPrice
+                await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice)
             }
 
-            setMaxPrice(newMaxPrice)
+            const wrappedHandleMouseUp = () => 
+            {
+                handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
+            }
+
+            if (draggingType === "max") 
+            {
+                document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any);
+            } 
+            else if (draggingType === "min") 
+            {
+                document.addEventListener("mousemove", wrappedHandleMinPriceMove as any);
+            }
+
+            document.addEventListener("mouseup", wrappedHandleMouseUp as any);
+
+            return () => 
+            {
+                document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any);
+                document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any);
+                document.removeEventListener("mouseup", wrappedHandleMouseUp as any);
+            }
         }
+        loadDragHandler()
+        // const handleMinPriceMove = async (event: MouseEvent) => 
+        // {
+        //     if (!chartRef.current) return
+
+        //     const rect = chartRef.current.getBoundingClientRect()
+        //     const offsetY = event.clientY - rect.top
+        //     const chartHeight = rect.height
+
+        //     const currentPrice = await (getCurrentPoolPrice()) ?? 0
+        //     const minAllowedPrice = currentPrice * 0.75 
+
+        //     let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
+
+        //     if (newMinPrice > maxPrice - 10) 
+        //     {
+        //         newMinPrice = maxPrice - 10
+        //     } 
+        //     else if (newMinPrice < minAllowedPrice) 
+        //     {
+        //         newMinPrice = minAllowedPrice
+        //     }
+
+        //     setMinPrice(newMinPrice)
+        // }
+
+        // const handleMaxPriceMove = async (event: MouseEvent) => 
+        // {
+        //     if (!chartRef.current) return
+
+        //     const rect = chartRef.current.getBoundingClientRect()
+        //     const offsetY = event.clientY - rect.top
+        //     const chartHeight = rect.height
+
+        //     const currentPrice = await (getCurrentPoolPrice()) ?? 0
+        //     const maxAllowedPrice = currentPrice * 1.25 
+
+        //     let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
+
+        //     if (newMaxPrice < minPrice + 10) 
+        //     {
+        //         newMaxPrice = minPrice + 10
+        //     } 
+        //     else if (newMaxPrice > maxAllowedPrice) 
+        //     {
+        //         newMaxPrice = maxAllowedPrice
+        //     }
+
+        //     setMaxPrice(newMaxPrice)
+        // }
         
-        const handleMouseUp = () => 
-        {
-            setDraggingType(null)
-            document.removeEventListener("mousemove", handleMaxPriceMove)
-            document.removeEventListener("mousemove", handleMinPriceMove)
-            document.removeEventListener("mouseup", handleMouseUp)
-        }
+        // const handleMouseUp = () => 
+        // {
+        //     setDraggingType(null)
+        //     document.removeEventListener("mousemove", handleMaxPriceMove)
+        //     document.removeEventListener("mousemove", handleMinPriceMove)
+        //     document.removeEventListener("mouseup", handleMouseUp)
+        // }
         
-        if (draggingType === "max") 
-        {
-            document.addEventListener("mousemove", handleMaxPriceMove)    
-        } 
-        else if (draggingType === "min") 
-        {
-            document.addEventListener("mousemove", handleMinPriceMove)
+        // if (draggingType === "max") 
+        // {
+        //     document.addEventListener("mousemove", handleMaxPriceMove)    
+        // } 
+        // else if (draggingType === "min") 
+        // {
+        //     document.addEventListener("mousemove", handleMinPriceMove)
             
-        }
+        // }
     
-        document.addEventListener("mouseup", handleMouseUp)
+        // document.addEventListener("mouseup", handleMouseUp)
         
-        return () => 
-        {
-            document.removeEventListener("mousemove", handleMaxPriceMove)
-            document.removeEventListener("mousemove", handleMinPriceMove)
-            document.removeEventListener("mouseup", handleMouseUp)
-        }
+        // return () => 
+        // {
+        //     document.removeEventListener("mousemove", handleMaxPriceMove)
+        //     document.removeEventListener("mousemove", handleMinPriceMove)
+        //     document.removeEventListener("mouseup", handleMouseUp)
+        // }
     
     }, [signer, contracts, deploymentAddresses, draggingType])
     
@@ -329,50 +316,65 @@ export default function PositionCreate()
     const [stepActive, setStepActive] = useState(1)
     const [highestStepVisited, setHighestStepVisited] = useState(stepActive)
 
-    const shouldAllowSelectStep = (step: number): boolean => 
+    const handleStepClick = (step: number) => 
     {
-        return highestStepVisited >= step
+        processStepClick(step, highestStepVisited, stepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setStepActive)
+    }
+
+    const shouldAllowSelectStep = (step: number) => 
+    {
+        return shouldAllowStep(step, highestStepVisited)
     }
 
     const handleStepChange = (nextStep: number) => 
     {
-        const isOutOfBounds = nextStep < 0 || nextStep > 2
-        if (isOutOfBounds) return
-
-        if (nextStep < stepActive)
-        {
-            setSelectedToken1(null)
-            setSelectedToken2(null)
-            setFee(null)
-        }
-
-        setStepActive(nextStep + 1)
-        setHighestStepVisited(prev => Math.max(prev, nextStep))
-
+        processStepChange(nextStep, stepActive, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited)
     }
 
-    const handleStepClick = (step: number) => 
-    {
-    if (!shouldAllowSelectStep(step)) return
+    // const shouldAllowSelectStep = (step: number): boolean => 
+    // {
+    //     return highestStepVisited >= step
+    // }
 
-        if (step === 1) 
-        {
-            if(validateFirstStep(selectedToken1, selectedToken2, fee)) 
-            {
-                setStepActive(step + 1)
-            }
-        } 
-        else 
-        {
-            if (step === 0) 
-            {
-                setSelectedToken1(null);
-                setSelectedToken2(null);
-                setFee(null);
-            }
-            setStepActive(step + 1)
-        }
-    }
+    // const handleStepChange = (nextStep: number) => 
+    // {
+    //     const isOutOfBounds = nextStep < 0 || nextStep > 2
+    //     if (isOutOfBounds) return
+
+    //     if (nextStep < stepActive)
+    //     {
+    //         setSelectedToken1(null)
+    //         setSelectedToken2(null)
+    //         setFee(null)
+    //     }
+
+    //     setStepActive(nextStep + 1)
+    //     setHighestStepVisited(prev => Math.max(prev, nextStep))
+
+    // }
+
+    // const handleStepClick = (step: number) => 
+    // {
+    // if (!shouldAllowSelectStep(step)) return
+
+    //     if (step === 1) 
+    //     {
+    //         if(validateFirstStep(selectedToken1, selectedToken2, fee)) 
+    //         {
+    //             setStepActive(step + 1)
+    //         }
+    //     } 
+    //     else 
+    //     {
+    //         if (step === 0) 
+    //         {
+    //             setSelectedToken1(null);
+    //             setSelectedToken2(null);
+    //             setFee(null);
+    //         }
+    //         setStepActive(step + 1)
+    //     }
+    // }
 
     //Toggle visibility of set fee component
     const [isVisible, setIsVisible] = useState(true)
@@ -442,110 +444,77 @@ export default function PositionCreate()
         }
     }
 
-    const approveTokenTransaction = async (tokenAddress: string, spenderAddress: string, amount: string, signer: ethers.Signer) => 
+    const doesPoolExist = async (token1Address: string | null, token2Address: string | null,
+    fee: number | null): Promise<boolean> => 
     {
+        if (!uniswapV3FactoryContract || !token1Address || !token2Address || fee === null) return false
+
+        try 
+        {
+            const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token1Address, token2Address, fee)
+            return poolAddress !== '0x0000000000000000000000000000000000000000'
+        } 
+        catch (error) 
+        {
+            console.error("Error checking pool existence:", error)
+            return false
+        }
+    }
+
+    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
+    {
+        if (!tokenAddress) 
+        {
+            return
+        }
+
         const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
-        await approveTokenContract?.approve(spenderAddress, ethers.parseEther(amount))
+        const parsedAmount = ethers.parseEther(amount)
+        await approveTokenContract.approve(spenderAddress, parsedAmount)
     }
 
     const addLiquidity = async () => 
     {
         if (!signer || !isConnected) return
 
-        console.log(contracts)
-
         if (signer && deploymentAddresses && contracts) 
         {
-
-            const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
-            const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-            const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
-
-            if (poolAddress && poolAddress !== ethers.ZeroAddress) 
+            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+            if (!poolExist) 
             {
+                const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+                const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
+                const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
                 const poolCallContract = getPoolContract(poolAddress) 
                 const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
                 const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
                 const poolInitializeTxReceipt = await poolInitializeTx.wait()
                 console.log(poolInitializeTxReceipt)
-                await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
-                await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
-
-                const mintParams = 
-                {
-                    recipient: await signer.getAddress(),
-                    tokenA: selectedToken1?.Address,
-                    tokenB: selectedToken2?.Address,
-                    fee: fee,
-                    lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
-                    upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
-                    amount0Desired: ethers.parseEther(token1Amount), //1
-                    amount1Desired: ethers.parseEther(token2Amount), //5000
-                    amount0Min: 0,
-                    amount1Min: 0,
-                }
-
-                const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
-                const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-                console.log(nftManagerMintLiquidityTx)
             }
 
-            // if (poolAddress && poolAddress !== "0x0000000000000000000000000000000000000000") 
+            await approveTokenTransaction(selectedToken1?.Address ?? null, nftManagerContractAddress,token1Amount, signer)
+            await approveTokenTransaction(selectedToken2?.Address ?? null, nftManagerContractAddress,token2Amount, signer)
+
+            const mintParams = 
+            {
+                recipient: await signer.getAddress(),
+                tokenA: selectedToken1?.Address,
+                tokenB: selectedToken2?.Address,
+                fee: fee,
+                lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
+                upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
+                amount0Desired: ethers.parseEther(token1Amount), //1
+                amount1Desired: ethers.parseEther(token2Amount), //5000
+                amount0Min: 0,
+                amount1Min: 0,
+            }
+
+            const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+            const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+            console.log(nftManagerMintLiquidityTx)
+
+            // if (poolAddress && poolAddress !== ethers.ZeroAddress) 
             // {
-                
-            //     await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
-            //     await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
-
-            //     const mintParams = 
-            //     {
-            //         recipient: await signer.getAddress(),
-            //         tokenA: selectedToken1?.Address,
-            //         tokenB: selectedToken2?.Address,
-            //         fee: fee,
-            //         lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
-            //         upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
-            //         amount0Desired: ethers.parseEther(token1Amount), //1
-            //         amount1Desired: ethers.parseEther(token2Amount), //5000
-            //         amount0Min: 0,
-            //         amount1Min: 0,
-            //     }
-
-            //     const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
-            //     const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-            //     console.log(nftManagerMintLiquidityTx)
-            // } 
-            // else if (!poolAddress || poolAddress === "0x0000000000000000000000000000000000000000")
-            // {
-            //     const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
-            //     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-            //     console.log(factoryCreatePoolReceipt)
-            //     const poolCallContract = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-
-            //     const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
-            //     const poolInitializeTx = await poolCallContract.initialize(sqrtPriceX96)
-            //     const poolInitializeTxReceipt = await poolInitializeTx.wait()
-
-            //     await ethereumContract?.approve(nftManagerContractAddress,ethers.parseEther("2"))
-            //     await usdcContract?.approve(nftManagerContractAddress,ethers.parseEther("10000"))
-
-            //     const mintParams = 
-            //     {
-            //         recipient: await signer.getAddress(),
-            //         tokenA: selectedToken1?.Address,
-            //         tokenB: selectedToken2?.Address,
-            //         fee: fee,
-            //         lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
-            //         upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
-            //         amount0Desired: ethers.parseEther(token1Amount), //1
-            //         amount1Desired: ethers.parseEther(token2Amount), //5000
-            //         amount0Min: 0,
-            //         amount1Min: 0,
-            //     }
-
-            //     const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
-            //     const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-            //     console.log(nftManagerMintLiquidityTx)
-                
             // }
         }
     }

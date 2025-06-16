@@ -189,15 +189,15 @@ export const BlockchainProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <BlockchainContext.Provider
     value=
     {{
-    account,
-    isConnected,
-    connectWallet,
-    disconnectWallet,
-    provider,
-    signer,
-    deploymentAddresses,
-    contracts,
-    getPoolContract
+      account,
+      isConnected,
+      connectWallet,
+      disconnectWallet,
+      provider,
+      signer,
+      deploymentAddresses,
+      contracts,
+      getPoolContract
     }}
     >
       {children}
