@@ -11,8 +11,8 @@ import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
-import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp} from '../utils/price_range_handler'
-import {shouldAllowStep, processStepClick, processStepChange } from '../utils/stepper_handler'
+import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp} from '../utils/position_create/price_range_utils'
+import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 
     type CryptocurrencyDetail = 
     {
@@ -233,82 +233,6 @@ export default function PositionCreate()
             }
         }
         loadDragHandler()
-        // const handleMinPriceMove = async (event: MouseEvent) => 
-        // {
-        //     if (!chartRef.current) return
-
-        //     const rect = chartRef.current.getBoundingClientRect()
-        //     const offsetY = event.clientY - rect.top
-        //     const chartHeight = rect.height
-
-        //     const currentPrice = await (getCurrentPoolPrice()) ?? 0
-        //     const minAllowedPrice = currentPrice * 0.75 
-
-        //     let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-        //     if (newMinPrice > maxPrice - 10) 
-        //     {
-        //         newMinPrice = maxPrice - 10
-        //     } 
-        //     else if (newMinPrice < minAllowedPrice) 
-        //     {
-        //         newMinPrice = minAllowedPrice
-        //     }
-
-        //     setMinPrice(newMinPrice)
-        // }
-
-        // const handleMaxPriceMove = async (event: MouseEvent) => 
-        // {
-        //     if (!chartRef.current) return
-
-        //     const rect = chartRef.current.getBoundingClientRect()
-        //     const offsetY = event.clientY - rect.top
-        //     const chartHeight = rect.height
-
-        //     const currentPrice = await (getCurrentPoolPrice()) ?? 0
-        //     const maxAllowedPrice = currentPrice * 1.25 
-
-        //     let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-        //     if (newMaxPrice < minPrice + 10) 
-        //     {
-        //         newMaxPrice = minPrice + 10
-        //     } 
-        //     else if (newMaxPrice > maxAllowedPrice) 
-        //     {
-        //         newMaxPrice = maxAllowedPrice
-        //     }
-
-        //     setMaxPrice(newMaxPrice)
-        // }
-        
-        // const handleMouseUp = () => 
-        // {
-        //     setDraggingType(null)
-        //     document.removeEventListener("mousemove", handleMaxPriceMove)
-        //     document.removeEventListener("mousemove", handleMinPriceMove)
-        //     document.removeEventListener("mouseup", handleMouseUp)
-        // }
-        
-        // if (draggingType === "max") 
-        // {
-        //     document.addEventListener("mousemove", handleMaxPriceMove)    
-        // } 
-        // else if (draggingType === "min") 
-        // {
-        //     document.addEventListener("mousemove", handleMinPriceMove)
-            
-        // }
-    
-        // document.addEventListener("mouseup", handleMouseUp)
-        
-        // return () => 
-        // {
-        //     document.removeEventListener("mousemove", handleMaxPriceMove)
-        //     document.removeEventListener("mousemove", handleMinPriceMove)
-        //     document.removeEventListener("mouseup", handleMouseUp)
-        // }
     
     }, [signer, contracts, deploymentAddresses, draggingType])
     
@@ -331,57 +255,12 @@ export default function PositionCreate()
         processStepChange(nextStep, stepActive, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited)
     }
 
-    // const shouldAllowSelectStep = (step: number): boolean => 
-    // {
-    //     return highestStepVisited >= step
-    // }
-
-    // const handleStepChange = (nextStep: number) => 
-    // {
-    //     const isOutOfBounds = nextStep < 0 || nextStep > 2
-    //     if (isOutOfBounds) return
-
-    //     if (nextStep < stepActive)
-    //     {
-    //         setSelectedToken1(null)
-    //         setSelectedToken2(null)
-    //         setFee(null)
-    //     }
-
-    //     setStepActive(nextStep + 1)
-    //     setHighestStepVisited(prev => Math.max(prev, nextStep))
-
-    // }
-
-    // const handleStepClick = (step: number) => 
-    // {
-    // if (!shouldAllowSelectStep(step)) return
-
-    //     if (step === 1) 
-    //     {
-    //         if(validateFirstStep(selectedToken1, selectedToken2, fee)) 
-    //         {
-    //             setStepActive(step + 1)
-    //         }
-    //     } 
-    //     else 
-    //     {
-    //         if (step === 0) 
-    //         {
-    //             setSelectedToken1(null);
-    //             setSelectedToken2(null);
-    //             setFee(null);
-    //         }
-    //         setStepActive(step + 1)
-    //     }
-    // }
-
     //Toggle visibility of set fee component
     const [isVisible, setIsVisible] = useState(true)
 
     const toggleVisibility = () => 
     {
-      setIsVisible((prev) => !prev)
+        setIsVisible((prev) => !prev)
     }
 
     const validateMinPrice = async () => 

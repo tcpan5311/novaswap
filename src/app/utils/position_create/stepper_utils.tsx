@@ -1,5 +1,3 @@
-// utils/stepperHelpers.ts
-
 export const shouldAllowStep = (step: number, highestStepVisited: number): boolean => 
 {
     return highestStepVisited >= step
