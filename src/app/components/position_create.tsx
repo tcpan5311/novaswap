@@ -11,83 +11,49 @@ import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
-import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp} from '../utils/position_create/price_range_utils'
+import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
+import {CryptocurrencyDetail, validateFirstStep, validateSecondStep, calculateTokenAmounts} from '../utils/position_create/validator_utils'
 
-    type CryptocurrencyDetail = 
-    {
-        Label: string 
-        Address: string 
-    }
-    let cryptocurrencies: CryptocurrencyDetail[] = []
+let cryptocurrencies: CryptocurrencyDetail[] = []
 
-    const feeStructure = 
-    [
-        { label: 0.01, value: 100, description: 'Best for very stable pairs.' },
-        { label: 0.05, value: 500, description: 'Best for stable pairs.' },
-        { label: 0.3, value: 3000, description: 'Best for most pairs.' },
-        { label: 1, value: 10000, description: 'Best for exotic pairs.' },
-    ]
+const feeStructure = 
+[
+    { label: 0.01, value: 100, description: 'Best for very stable pairs.' },
+    { label: 0.05, value: 500, description: 'Best for stable pairs.' },
+    { label: 0.3, value: 3000, description: 'Best for most pairs.' },
+    { label: 1, value: 10000, description: 'Best for exotic pairs.' },
+]
 
-    const data = 
-    [
-        { date: "Mar 22", Price: 4325 },
-        { date: "Mar 23", Price: 4650 },
-        { date: "Mar 24", Price: 4800 },
-        { date: "Mar 24", Price: 5000 },
-        { date: "Mar 27", Price: 5150 },
-        { date: "Mar 28", Price: 5475 },
-    ]
+const data = 
+[
+    { date: "Mar 22", Price: 4325 },
+    { date: "Mar 23", Price: 4650 },
+    { date: "Mar 24", Price: 4800 },
+    { date: "Mar 24", Price: 5000 },
+    { date: "Mar 27", Price: 5150 },
+    { date: "Mar 28", Price: 5475 },
+]
 
-    type data = {date: string; Price: number}
+type data = {date: string; Price: number}
 
-    const validateFirstStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null): boolean => 
-    {
-        const isTokenValid = (token: CryptocurrencyDetail | null): boolean =>
-        token !== null &&
-        typeof token.Label === 'string' &&
-        token.Label.trim() !== '' &&
-        typeof token.Address === 'string' &&
-        token.Address.trim() !== ''
-
-        const isFeeValid = (fee: number | null): boolean =>
-        fee !== null && !isNaN(fee) && fee >= 0
-
-        return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee)
-    }
-
-    const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: string | null, token2Amount: string | null): boolean => 
-    {
-        if (!validateFirstStep(token1, token2, fee)) 
-        {
-            return false
-        }
-
-        const isPriceValid = (min: number, max: number): boolean => !isNaN(min) && !isNaN(max) && min >= 0 && max >= min
-        const isAmountValid = (amount: string | null): boolean => amount !== null && amount.trim() !== '' && !isNaN(Number(amount)) && Number(amount) > 0
-
-        return (isPriceValid(minPrice, maxPrice) && isAmountValid(token1Amount) && isAmountValid(token2Amount))
-    }
+const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
+{
+    const prices = data.map((item: data) => item.Price)
+    const highestPrice = Math.max(...prices)
+    const lowestPrice = Math.min(...prices)
     
+    const graphMaxPrice = highestPrice * 1.2
+    const graphMinPrice = lowestPrice * 0.8
 
-    const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
-    {
-        const prices = data.map((item: data) => item.Price)
-        const highestPrice = Math.max(...prices)
-        const lowestPrice = Math.min(...prices)
-        
-        const graphMaxPrice = highestPrice * 1.2
-        const graphMinPrice = lowestPrice * 0.8
-    
-        return {
-            highestPrice,
-            lowestPrice,
-            graphMaxPrice,
-            graphMinPrice
-        }
+    return {
+        highestPrice,
+        lowestPrice,
+        graphMaxPrice,
+        graphMinPrice
     }
+}
     
-
 export default function PositionCreate() 
 {
     const router = useRouter()
@@ -156,6 +122,9 @@ export default function PositionCreate()
 
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
+
+    const [isFirstStepValid, setIsFirstStepValid] = useState(false)
+    const [isSecondStepValid, setIsSecondStepValid] = useState(false)
     
     useEffect(() => 
     {
@@ -197,44 +166,56 @@ export default function PositionCreate()
 
         const loadDragHandler = async () => 
         {
-            const currentPrice = await (getCurrentPoolPrice()) ?? 0
-
-            const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
+            // const currentPrice = 5000
+            if (isFirstStepValid)
             {
-                await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice)
+                const currentPrice = await (getCurrentPoolPrice()) ?? 0
+                console.log(currentPrice)
+
+                const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
+                {
+                    await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice)
+                }
+
+                const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
+                {
+                    await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice)
+                }
+
+                const wrappedHandleMouseUp = () => 
+                {
+                    handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
+                }
+
+                if (draggingType === "max") 
+                {
+                    document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any);
+                } 
+                else if (draggingType === "min") 
+                {
+                    document.addEventListener("mousemove", wrappedHandleMinPriceMove as any);
+                }
+
+                document.addEventListener("mouseup", wrappedHandleMouseUp as any);
+
+                return () => 
+                {
+                    document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any);
+                    document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any);
+                    document.removeEventListener("mouseup", wrappedHandleMouseUp as any);
+                }
             }
 
-            const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
-            {
-                await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice)
-            }
-
-            const wrappedHandleMouseUp = () => 
-            {
-                handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
-            }
-
-            if (draggingType === "max") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any);
-            } 
-            else if (draggingType === "min") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMinPriceMove as any);
-            }
-
-            document.addEventListener("mouseup", wrappedHandleMouseUp as any);
-
-            return () => 
-            {
-                document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any);
-                document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any);
-                document.removeEventListener("mouseup", wrappedHandleMouseUp as any);
-            }
         }
         loadDragHandler()
+
+        const firstStepValid = validateFirstStep(selectedToken1, selectedToken2, fee)
+        setIsFirstStepValid(firstStepValid)
+
+        const secondStepValid = validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
+        setIsSecondStepValid(secondStepValid)
     
-    }, [signer, contracts, deploymentAddresses, draggingType])
+    }, [signer, contracts, deploymentAddresses, draggingType, selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount])
     
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
@@ -265,23 +246,20 @@ export default function PositionCreate()
 
     const validateMinPrice = async () => 
     {
-        const current = await (getCurrentPoolPrice()) ?? 0
-
-        setMinPrice((prev) => {
-            const minAllowed = current * 0.75
-            const maxLimit = maxPrice - 10
-            return Math.max(Math.min(prev, maxLimit), minAllowed)
-        })
+        if(isFirstStepValid) 
+        {
+            const currentPrice = await (getCurrentPoolPrice()) ?? 0
+            await handleMinPrice(currentPrice, maxPrice, setMinPrice)
+        }
     }
 
     const validateMaxPrice = async () => 
     {
-        const current = await (getCurrentPoolPrice()) ?? 0
-        setMaxPrice((prev) => {
-            const maxAllowed = current * 1.25
-            const minLimit = minPrice + 10
-            return Math.min(Math.max(prev, minLimit), maxAllowed)
-        })
+        if(isFirstStepValid) 
+        {
+            const currentPrice = await (getCurrentPoolPrice()) ?? 0
+            await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
+        }
     }
 
     //Helper functions
@@ -355,42 +333,50 @@ export default function PositionCreate()
     const addLiquidity = async () => 
     {
         if (!signer || !isConnected) return
-
+        
         if (signer && deploymentAddresses && contracts) 
         {
-            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-            if (!poolExist) 
+            try
             {
-                const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
-                const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-                const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
-                const poolCallContract = getPoolContract(poolAddress) 
-                const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
-                const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
-                const poolInitializeTxReceipt = await poolInitializeTx.wait()
-                console.log(poolInitializeTxReceipt)
+                const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+                if (!poolExist) 
+                {
+                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+                    const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
+                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+                    const poolCallContract = getPoolContract(poolAddress) 
+                    const sqrtPriceX96 = priceToSqrtPBigNumber(5000)
+                    const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
+                    const poolInitializeTxReceipt = await poolInitializeTx.wait()
+                    console.log(poolInitializeTxReceipt)
+                }
+
+                await approveTokenTransaction(selectedToken1?.Address ?? null, nftManagerContractAddress,token1Amount, signer)
+                await approveTokenTransaction(selectedToken2?.Address ?? null, nftManagerContractAddress,token2Amount, signer)
+
+                const mintParams = 
+                {
+                    recipient: await signer.getAddress(),
+                    tokenA: selectedToken1?.Address,
+                    tokenB: selectedToken2?.Address,
+                    fee: fee,
+                    lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
+                    upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
+                    amount0Desired: ethers.parseEther(token1Amount), //1
+                    amount1Desired: ethers.parseEther(token2Amount), //5000
+                    amount0Min: 0,
+                    amount1Min: 0,
+                }
+
+                const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+                const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+                console.log(nftManagerMintLiquidityTx)
+            }
+            catch(error)
+            {
+                console.log(error)
             }
 
-            await approveTokenTransaction(selectedToken1?.Address ?? null, nftManagerContractAddress,token1Amount, signer)
-            await approveTokenTransaction(selectedToken2?.Address ?? null, nftManagerContractAddress,token2Amount, signer)
-
-            const mintParams = 
-            {
-                recipient: await signer.getAddress(),
-                tokenA: selectedToken1?.Address,
-                tokenB: selectedToken2?.Address,
-                fee: fee,
-                lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
-                upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
-                amount0Desired: ethers.parseEther(token1Amount), //1
-                amount1Desired: ethers.parseEther(token2Amount), //5000
-                amount0Min: 0,
-                amount1Min: 0,
-            }
-
-            const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
-            const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-            console.log(nftManagerMintLiquidityTx)
 
             // if (poolAddress && poolAddress !== ethers.ZeroAddress) 
             // {
@@ -400,6 +386,8 @@ export default function PositionCreate()
 
     const quotePool = async () => 
     {
+        const { amountA, amountB } = calculateTokenAmounts(true, 1, 4545, 5500, 4900)
+
         if (signer && deploymentAddresses && contracts) 
         {
             try
@@ -627,7 +615,7 @@ Test swap
                                 radius="md"
                                 className="mt-[5%]"
                                 onClick={() => handleStepChange(stepActive)}
-                                disabled={!validateFirstStep(selectedToken1, selectedToken2, fee)}
+                                disabled={!isFirstStepValid}
                             >
                                 Continue
                             </Button>
@@ -857,11 +845,11 @@ Test swap
                                             fullWidth
                                             radius="md"
                                             className="mt-[5%]"
-                                            disabled={!validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)}
+                                            disabled={!isSecondStepValid}
                                             onClick={addLiquidity}
                                         >
                                             {
-                                                validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
+                                                isSecondStepValid
                                                 ? 'Continue'
                                                 : 'Incomplete fields'
                                             }

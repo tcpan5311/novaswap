@@ -1,3 +1,4 @@
+import { Dispatch, SetStateAction } from "react"
 
 export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, maxPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMinPrice: (price: number) => void) => 
 {
@@ -53,4 +54,24 @@ export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => v
     document.removeEventListener("mousemove", handleMaxPriceMove as any)
     document.removeEventListener("mousemove", handleMinPriceMove as any)
     document.removeEventListener("mouseup", handleMouseUp as any)
+}
+
+export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>) => 
+{
+    setMinPrice((prev) => 
+    {
+        const minAllowed = currentPoolPrice * 0.75
+        const maxLimit = maxPrice - 10
+        return Math.max(Math.min(prev, maxLimit), minAllowed)
+    })
+}
+
+export const handleMaxPrice = async (currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>) => 
+{
+    setMaxPrice((prev) => 
+    {
+        const maxAllowed = currentPoolPrice * 1.25
+        const minLimit = minPrice + 10
+        return Math.min(Math.max(prev, minLimit), maxAllowed)
+    })
 }
