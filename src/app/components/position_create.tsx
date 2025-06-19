@@ -10,10 +10,11 @@ import { ethers } from 'ethers'
 import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
-import { TickMath, encodeSqrtRatioX96, nearestUsableTick } from '@uniswap/v3-sdk'
+import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
+import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, validateFirstStep, validateSecondStep, calculateTokenAmounts} from '../utils/position_create/validator_utils'
+import {CryptocurrencyDetail, validateFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -52,6 +53,19 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
         graphMaxPrice,
         graphMinPrice
     }
+}
+
+export function useDebounceEffect(callback: () => void, deps: any[], delay: number) 
+{
+    useEffect(() => 
+    {
+        const handler = setTimeout(() => 
+        {
+            callback()
+        }, delay)
+
+        return () => clearTimeout(handler)
+    }, [...deps, delay])
 }
     
 export default function PositionCreate() 
@@ -114,11 +128,14 @@ export default function PositionCreate()
     //For setting liquidity price range
     let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
 
-    const [minPrice, setMinPrice] = useState(4400)
+    const [minPrice, setMinPrice] = useState(4545)
     const [maxPrice, setMaxPrice] = useState(5500)
 
     const [token1Amount, setToken1Amount] = useState<string>('')
     const [token2Amount, setToken2Amount] = useState<string>('')
+
+    const [token1Only, setToken1Only] = useState<boolean>(false)
+    const [token2Only, setToken2Only] = useState<boolean>(false)
 
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
@@ -126,7 +143,7 @@ export default function PositionCreate()
     const [isFirstStepValid, setIsFirstStepValid] = useState(false)
     const [isSecondStepValid, setIsSecondStepValid] = useState(false)
     
-    useEffect(() => 
+    useDebounceEffect(() => 
     {
         const loadData = async () => 
         {
@@ -175,11 +192,15 @@ export default function PositionCreate()
                 const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
                 {
                     await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice)
+                    setToken1Amount("")
+                    setToken2Amount("")
                 }
 
                 const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
                 {
                     await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice)
+                    setToken1Amount("")
+                    setToken2Amount("")
                 }
 
                 const wrappedHandleMouseUp = () => 
@@ -189,20 +210,20 @@ export default function PositionCreate()
 
                 if (draggingType === "max") 
                 {
-                    document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any);
+                    document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
                 } 
                 else if (draggingType === "min") 
                 {
-                    document.addEventListener("mousemove", wrappedHandleMinPriceMove as any);
+                    document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
                 }
 
-                document.addEventListener("mouseup", wrappedHandleMouseUp as any);
+                document.addEventListener("mouseup", wrappedHandleMouseUp as any)
 
                 return () => 
                 {
-                    document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any);
-                    document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any);
-                    document.removeEventListener("mouseup", wrappedHandleMouseUp as any);
+                    document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
+                    document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
+                    document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
                 }
             }
 
@@ -215,7 +236,7 @@ export default function PositionCreate()
         const secondStepValid = validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
         setIsSecondStepValid(secondStepValid)
     
-    }, [signer, contracts, deploymentAddresses, draggingType, selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount])
+    }, [signer, contracts, deploymentAddresses, draggingType, selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount], 500)
     
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
@@ -250,6 +271,8 @@ export default function PositionCreate()
         {
             const currentPrice = await (getCurrentPoolPrice()) ?? 0
             await handleMinPrice(currentPrice, maxPrice, setMinPrice)
+            setToken1Amount("")
+            setToken2Amount("")
         }
     }
 
@@ -259,6 +282,8 @@ export default function PositionCreate()
         {
             const currentPrice = await (getCurrentPoolPrice()) ?? 0
             await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
+            setToken1Amount("")
+            setToken2Amount("")
         }
     }
 
@@ -277,7 +302,19 @@ export default function PositionCreate()
         return ratio ** 2
     }
 
-    const priceToSqrtP = (price: number) => encodeSqrtRatioX96(price, 1)
+    // const priceToSqrtP = (price: number) => encodeSqrtRatioX96(price, 1)
+
+    const priceToSqrtP = (price: number) => 
+    {
+        const DECIMALS = 18
+        const SCALE = 10 ** DECIMALS
+
+        const numerator = JSBI.BigInt(Math.round(price * SCALE))
+        const denominator = JSBI.BigInt(SCALE)
+
+        return encodeSqrtRatioX96(numerator, denominator)
+    }
+
     const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
 
     const getCurrentPoolPrice = async () => 
@@ -384,9 +421,130 @@ export default function PositionCreate()
         }
     }
 
-    const quotePool = async () => 
+    const computeTokenAmount = async (isAToB: boolean, overrideAmount?: string) => 
     {
-        const { amountA, amountB } = calculateTokenAmounts(true, 1, 4545, 5500, 4900)
+        const network = await provider?.getNetwork()
+        const chainId = Number(network?.chainId) 
+
+        if (isNaN(chainId)) 
+        {
+            throw new Error("Invalid chainId")
+        }
+
+        const contract1 = new ethers.Contract(selectedToken1?.Address ?? "", ERC20Mintable.abi, signer)
+        const contract2 = new ethers.Contract(selectedToken2?.Address ?? "", ERC20Mintable.abi, signer)
+
+        const [decA, decB, symA, symB] = await Promise.all([contract1?.decimals(), contract2?.decimals(), contract1?.symbol(), contract2?.symbol()])
+
+        const tokenA = new Token(chainId, selectedToken1?.Address ?? "", Number(decA), symA)
+        const tokenB = new Token(chainId, selectedToken2?.Address ?? "", Number(decB), symB)
+
+        const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address ?? "", selectedToken2?.Address ?? "", fee)
+        
+        const poolCallContract = getPoolContract(poolAddress) 
+
+        const [slot0, liquidity] = await Promise.all([poolCallContract?.slot0(), poolCallContract?.liquidity()])
+        
+        const sqrtPriceX96 = slot0.sqrtPriceX96.toString()
+        const currentTick = slot0.tick
+
+        const pool = new Pool
+        (
+            tokenA,
+            tokenB,
+            3000,
+            sqrtPriceX96,
+            liquidity.toString(),
+            Number(currentTick)
+        )
+
+        const tickLower = nearestUsableTick(priceToTick(minPrice), 60)
+        const tickUpper = nearestUsableTick(priceToTick(maxPrice), 60)
+
+        let amountTokenA, amountTokenB
+
+    if (isAToB) {
+        const amountStr = overrideAmount ?? token1Amount;
+        amountTokenA = CurrencyAmount.fromRawAmount(tokenA, ethers.parseUnits(amountStr, decA).toString())
+
+        const position = Position.fromAmount0({
+            pool,
+            tickLower,
+            tickUpper,
+            amount0: amountTokenA.quotient,
+            useFullPrecision: true
+        })
+
+        amountTokenB = position.amount1
+    } 
+    else 
+    {
+        const amountStr = overrideAmount ?? token2Amount
+        amountTokenB = CurrencyAmount.fromRawAmount(tokenB, ethers.parseUnits(amountStr, decB).toString())
+
+        const position = Position.fromAmount1({
+            pool,
+            tickLower,
+            tickUpper,
+            amount1: amountTokenB.quotient
+        })
+
+        amountTokenA = position.amount0
+    }
+
+    const amountA = amountTokenA.toSignificant(4)
+    const amountB = amountTokenB.toSignificant(4)
+
+    return { amountA, amountB }
+    }
+
+const updateTokenAmounts = async (isAToB: boolean, inputValue: string) => {
+
+     if (inputValue.trim() === "")
+    {
+        setToken1Amount("")
+        setToken2Amount("")
+        return
+    } 
+
+    if (isFirstStepValid && signer && deploymentAddresses && contracts)
+    {
+        const currentPrice = await getCurrentPoolPrice() ?? 0
+        const isBelowMin = currentPrice <= minPrice
+        const isAboveMax = currentPrice >= maxPrice
+
+        if (isBelowMin) 
+        {
+            console.log("CASE A")
+            // setToken2Amount('0')
+            setToken1Amount('0')
+            return
+        }
+
+        if (isAboveMax) 
+        {
+            console.log("CASE B")
+            // setToken1Amount('0')
+            setToken2Amount('0')
+            return
+        }
+
+        if (isAToB) 
+        {
+            const { amountA, amountB } = await computeTokenAmount(true, inputValue)
+            setToken2Amount(amountB.toString())
+        } 
+        else 
+        {
+            const { amountA, amountB } = await computeTokenAmount(false, inputValue)
+            setToken1Amount(amountA.toString())
+        }
+    }
+
+}
+
+    const quotePool = async () => 
+    {   
 
         if (signer && deploymentAddresses && contracts) 
         {
@@ -446,7 +604,7 @@ export default function PositionCreate()
 fullWidth
 radius="md"
 className="mt-[5%]"
-onClick={quotePool}
+onClick={() => computeTokenAmount(false)}
 >
 Test get current pool price
 </Button>
@@ -803,12 +961,13 @@ Test swap
                                         size="xl"
                                         placeholder="0"
                                         value={token1Amount}
-                                        onChange={(event) => 
+                                        onChange={async (event) => 
                                         {
                                             const input = event.currentTarget.value;
                                             if (/^\d*\.?\d*$/.test(input)) 
                                             {
-                                                setToken1Amount(input);
+                                                setToken1Amount(input)
+                                                await updateTokenAmounts(true, input)
                                             }
                                         }}
                                         rightSection={
@@ -824,12 +983,13 @@ Test swap
                                         size="xl"
                                         placeholder="0"
                                         value={token2Amount}
-                                        onChange={(event) => 
+                                        onChange={async (event) => 
                                         {
                                             const input = event.currentTarget.value;
                                             if (/^\d*\.?\d*$/.test(input)) 
                                             {
-                                                setToken2Amount(input);
+                                                setToken2Amount(input)
+                                                await updateTokenAmounts(false, input)
                                             }
                                         }}
                                         rightSection={

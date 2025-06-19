@@ -210,7 +210,7 @@ export const UseBlockchain = (): BlockchainContextType =>
     const context = useContext(BlockchainContext)
     if (!context) 
     {
-    throw new Error("Blockchain Context must be used within a BlockchainProvider")
+      throw new Error("Blockchain Context must be used within a BlockchainProvider")
     }
     return context
 }
