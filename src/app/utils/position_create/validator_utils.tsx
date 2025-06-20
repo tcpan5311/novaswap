@@ -25,7 +25,7 @@ export const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: 
 
     const isAmountValid = (amount: string | null): boolean => amount !== null && amount.trim() !== '' && !isNaN(Number(amount)) && Number(amount) > 0
 
-    return (isPriceValid(minPrice, maxPrice) && isAmountValid(token1Amount) && isAmountValid(token2Amount))
+    return (isPriceValid(minPrice, maxPrice))
 }
 
 // Constants
