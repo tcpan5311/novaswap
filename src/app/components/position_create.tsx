@@ -131,6 +131,9 @@ export default function PositionCreate()
     const [minPrice, setMinPrice] = useState(4545)
     const [maxPrice, setMaxPrice] = useState(5500)
 
+    const [minPriceInput, setMinPriceInput] = useState<string>(minPrice.toString())
+    const [maxPriceInput, setMaxPriceInput] = useState<string>(maxPrice.toString())
+
     const [token1Amount, setToken1Amount] = useState<string>('')
     const [token2Amount, setToken2Amount] = useState<string>('')
 
@@ -189,49 +192,48 @@ export default function PositionCreate()
         loadData()
     }, [signer, contracts, deploymentAddresses], 500)
 
-    useEffect(() => 
+    useEffect(() => {
+    const attachListeners = async () => 
     {
-        const attachListeners = async () => 
+        if (!isFirstStepValid) return
+
+        const currentPrice = await getCurrentPoolPrice() ?? 0
+
+        const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
         {
-            if (!isFirstStepValid) return
-
-            const currentPrice = await getCurrentPoolPrice() ?? 0
-
-            const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
-            {
-                await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice)
-            }
-
-            const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
-            {
-                await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice)
-            }
-
-            const wrappedHandleMouseUp = () => 
-            {
-                handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
-            }
-
-            if (draggingType === "max") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-            } 
-            else if (draggingType === "min") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
-            }
-
-            document.addEventListener("mouseup", wrappedHandleMouseUp as any)
-
-            return () => 
-            {
-                document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-                document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
-                document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
-            }
+            await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice, setMinPriceInput)
         }
 
-        attachListeners()
+        const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
+        {
+        await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
+        }
+
+        const wrappedHandleMouseUp = () => 
+        {
+            handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
+        }
+
+        if (draggingType === "max") 
+        {
+            document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
+        } 
+        else if (draggingType === "min") 
+        {
+            document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
+        }
+
+        document.addEventListener("mouseup", wrappedHandleMouseUp as any)
+
+        return () => 
+        {
+            document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
+            document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
+            document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
+        }
+    }
+
+    attachListeners()
     }, [draggingType, isFirstStepValid, minPrice, maxPrice])
 
     useDebounceEffect(() => 
@@ -259,7 +261,7 @@ export default function PositionCreate()
                 await updateTokenAmounts(false, token2Amount) // convert B → A
             }
 
-            const secondStepValid = validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
+            const secondStepValid = validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount, currentPrice)
             setIsSecondStepValid(secondStepValid)
         }
 
@@ -293,13 +295,40 @@ export default function PositionCreate()
     {
         setIsVisible((prev) => !prev)
     }
+        function validatePriceInput(input: string, maxDecimalsForOneOrMore = 4): number | null 
+    {
+        input = input.trim()
+
+        if (input === "") return null
+
+        const numericPattern = /^(\d+)?(\.\d*)?$/
+        if (!numericPattern.test(input)) return null
+
+        if (input.endsWith(".")) return null
+
+        const parsed = parseFloat(input)
+        if (isNaN(parsed) || parsed < 0) return null
+
+        const decimals = input.includes(".") ? input.split(".")[1].length : 0
+
+        if (parsed >= 1 && decimals > maxDecimalsForOneOrMore) return null
+
+        return parsed
+    }
 
     const validateMinPrice = async () => 
     {
-        if(isFirstStepValid) 
+        if (!isFirstStepValid) return
+
+        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+        if (!poolExist) return
+
+        const currentPrice = await getCurrentPoolPrice() ?? 0
+        const clampedMin = await handleMinPrice(currentPrice, maxPrice, setMinPrice)
+
+        if (clampedMin != null)
         {
-            const currentPrice = await (getCurrentPoolPrice()) ?? 0
-            await handleMinPrice(currentPrice, maxPrice, setMinPrice)
+            setMinPriceInput(clampedMin.toString())
         }
     }
 
@@ -307,8 +336,16 @@ export default function PositionCreate()
     {
         if(isFirstStepValid) 
         {
-            const currentPrice = await (getCurrentPoolPrice()) ?? 0
-            await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
+            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+            if (!poolExist) return
+            
+            const currentPrice = await getCurrentPoolPrice() ?? 0
+            const clampedMax = await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
+
+            if (clampedMax != null)
+            {
+                setMaxPriceInput(clampedMax.toString())
+            }
         }
     }
 
@@ -468,23 +505,27 @@ export default function PositionCreate()
 
     const updateTokenAmounts = async (isAToB: boolean, inputValue: string) => 
     {
-
         if (inputValue.trim() === "")
         {
             setToken1Amount("")
             setToken2Amount("")
             return
         } 
-
         if (isFirstStepValid && signer && deploymentAddresses && contracts)
         {
+
+            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+            if (!poolExist) 
+            {
+                return
+            }            
             const currentPrice = await getCurrentPoolPrice() ?? 0
             const isBelowMin = currentPrice < minPrice && currentPrice < maxPrice
             const isAboveMax = currentPrice > maxPrice && currentPrice > maxPrice
 
             if (isBelowMin) 
             {
-                console.log("Price is below the minimum range. Supplying only Token1")
+                // console.log("Price is below the minimum range. Supplying only Token1")
                 if (isAToB && lastEditedField !== "token2")
                 {
                     setToken2Amount("0")
@@ -498,7 +539,7 @@ export default function PositionCreate()
 
             if (isAboveMax) 
             {
-                console.log("Price is above the maximum range. Supplying only Token2")
+                // console.log("Price is above the maximum range. Supplying only Token2")
                 if (!isAToB && lastEditedField !== "token1")
                 {
                     setToken1Amount("0")  
@@ -526,6 +567,11 @@ export default function PositionCreate()
 
     const handleTokenInputDisplay = async() =>
     {
+        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+        if (!poolExist) 
+        {
+            return
+        }
         const currentPrice = await getCurrentPoolPrice() ?? 0
         const isAboveRange = currentPrice > maxPrice && currentPrice > maxPrice
         const isBelowRange = currentPrice < minPrice && currentPrice < maxPrice
@@ -610,14 +656,8 @@ export default function PositionCreate()
                 console.log(error)
             }
 
-
-            // if (poolAddress && poolAddress !== ethers.ZeroAddress) 
-            // {
-            // }
         }
     }
-
-
 
 
     const quotePool = async () => 
@@ -677,23 +717,24 @@ export default function PositionCreate()
 
     return (
         <>
-<Button
-fullWidth
-radius="md"
-className="mt-[5%]"
-onClick={() => computeTokenAmount(false)}
->
-Test get current pool price
-</Button>
+            {/* Test function for quotePool and swapToken */}
+            <Button
+            fullWidth
+            radius="md"
+            className="mt-[5%]"
+            onClick={quotePool}
+            >
+            Test get current pool price
+            </Button>
 
-<Button
-fullWidth
-radius="md"
-className="mt-[5%]"
-onClick={swapToken}
->
-Test swap
-</Button>
+            <Button
+            fullWidth
+            radius="md"
+            className="mt-[5%]"
+            onClick={swapToken}
+            >
+            Test swap
+            </Button>
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>
                     <Box className="flex flex-wrap p-4">
@@ -859,7 +900,7 @@ Test swap
                                 fullWidth
                                 radius="md"
                                 className="mt-[5%]"
-                                onClick={connectWallet} // replace with your wallet connection function
+                                onClick={connectWallet}
                             >
                                 Connect Wallet
                             </Button>
@@ -982,16 +1023,30 @@ Test swap
                                                             c="#4f0099"
                                                             variant="unstyled"
                                                             size="xl"
-                                                            value={parseFloat(minPrice.toFixed(2))}
+                                                            value={minPriceInput}
                                                             onChange={(event) => 
                                                             {
-                                                                setMinPrice(Number(event.target.value))
+                                                                const priceInputRegex = /^\d*\.?\d{0,4}$/
+                                                                const input = event.target.value
+
+                                                                if (input === '') 
+                                                                {
+                                                                    setMinPriceInput('')
+                                                                    setMinPrice(0)
+                                                                    return
+                                                                }
+
+                                                                if (priceInputRegex.test(input)) 
+                                                                {
+                                                                    setMinPriceInput(input)
+
+                                                                    const parsedInput = validatePriceInput(input, 4)
+                                                                    if (parsedInput !== null) 
+                                                                    {
+                                                                        setMinPrice(parsedInput)
+                                                                    }
+                                                                }
                                                             }}
-                                                            // onBlur={async(event) => 
-                                                            // {
-                                                            //     validateMinPrice
-                                                            //     await handleTokenInputDisplay()
-                                                            // }}
                                                             />
                                                             <Text c="#4f0099" size="sm">NEAR per ETH</Text>
                                                         </Box>
@@ -1017,16 +1072,30 @@ Test swap
                                                             c="#4f0099"
                                                             variant="unstyled"
                                                             size="xl"
-                                                            value={parseFloat(maxPrice.toFixed(2))}
+                                                            value={maxPriceInput}
                                                             onChange={(event) => 
                                                             {
-                                                                setMaxPrice(Number(event.target.value))
+                                                                const priceInputRegex = /^\d*\.?\d{0,4}$/
+                                                                const input = event.target.value
+
+                                                                if (input === '') 
+                                                                {
+                                                                    setMaxPriceInput('')
+                                                                    setMaxPrice(0)
+                                                                    return
+                                                                }
+
+                                                                if (priceInputRegex.test(input)) 
+                                                                {
+                                                                    setMaxPriceInput(input)
+
+                                                                    const parsedInput = validatePriceInput(input, 4)
+                                                                    if (parsedInput !== null) 
+                                                                    {
+                                                                        setMaxPrice(parsedInput)
+                                                                    }
+                                                                }
                                                             }}
-                                                            // onBlur={async(event) => 
-                                                            // {
-                                                            //     validateMaxPrice
-                                                            //     await handleTokenInputDisplay()
-                                                            // }}
                                                             />
                                                             <Text c="#4f0099" size="sm">NEAR per ETH</Text>
                                                         </Box>
@@ -1057,12 +1126,11 @@ Test swap
                                                 value={token1Amount}
                                                 onChange={async (event) => 
                                                 {
-                                                    const input = event.currentTarget.value;
+                                                    const input = event.currentTarget.value
                                                     if (/^\d*\.?\d*$/.test(input)) 
                                                     {
                                                         setToken1Amount(input)
                                                         setLastEditedField("token1")
-                                                        // await updateTokenAmounts(true, input)
                                                     }
                                                 }}
                                                 rightSection={
@@ -1091,7 +1159,6 @@ Test swap
                                                     {
                                                         setToken2Amount(input)
                                                         setLastEditedField("token2")
-                                                        // await updateTokenAmounts(false, input)
                                                     }
                                                 }}
                                                 rightSection={
@@ -1124,7 +1191,7 @@ Test swap
                                             fullWidth
                                             radius="md"
                                             className="mt-[5%]"
-                                            onClick={connectWallet} // replace with your wallet connection function
+                                            onClick={connectWallet}
                                         >
                                             Connect Wallet
                                         </Button>
