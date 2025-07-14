@@ -4,15 +4,19 @@ export interface CryptocurrencyDetail
     Address: string
 }
 
+export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>
+
 export const validateFirstStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null): boolean => 
 {
     const isTokenValid = (token: CryptocurrencyDetail | null): boolean => token !== null && typeof token.Label === 'string' && token.Label.trim() !== '' && typeof token.Address === 'string' && token.Address.trim() !== ''
     const isFeeValid = (fee: number | null): boolean => fee !== null && !isNaN(fee) && fee >= 0
-    return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee)
+    const isSameToken = token1 && token2 && token1.Address === token2.Address
+    return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee) && !isSameToken
 }
 
 export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, initialPrice: number, doesPoolExistFn: (token1Address: string | null, token2Address: string | null, fee: number | null) => Promise<boolean>): Promise<{ isValid: boolean; poolExists: boolean }> => 
 {
+
     if (!validateFirstStep(token1, token2, fee)) return { isValid: false, poolExists: false }
 
     const token1Address = token1?.Address ?? null
@@ -24,7 +28,7 @@ export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null,
     return { isValid, poolExists }
 }
 
-export const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: string | null, token2Amount: string | null, currentPrice: number | null ): boolean => 
+export const validateSecondStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: string | null, token2Amount: string | null, currentPrice: number | null, computeTokenAmount: (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => Promise<{ amountA: string, amountB: string }>): Promise<boolean> => 
 {
     if (!validateFirstStep(token1, token2, fee)) 
     {
@@ -44,6 +48,8 @@ export const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: 
     const isBelowRange = price < minPrice
     const isWithinRange = price >= minPrice && price <= maxPrice
 
+    
+
     if (isAboveRange) 
     {
         return isAmountValid(token2Amount) 
@@ -56,7 +62,34 @@ export const validateSecondStep = (token1: CryptocurrencyDetail | null, token2: 
 
     if (isWithinRange) 
     {
-        return isAmountValid(token1Amount) && isAmountValid(token2Amount) 
+        try 
+        {
+            const resultAtoB = await computeTokenAmount(true, "0.0001", price)
+            const resultBtoA = await computeTokenAmount(false, "0.0001", price)
+
+            const amountA_from_B = Number(resultBtoA.amountA)
+            const amountB_from_A = Number(resultAtoB.amountB)
+
+            const token1Disabled = amountA_from_B === 0
+            const token2Disabled = amountB_from_A === 0
+
+            if (token1Disabled && !token2Disabled) 
+            {
+                return isAmountValid(token2Amount)
+            } 
+            else if (!token1Disabled && token2Disabled) 
+            {
+                return isAmountValid(token1Amount)
+            } 
+            else 
+            {
+                return isAmountValid(token1Amount) && isAmountValid(token2Amount)
+            }
+        } 
+        catch (error) 
+        {
+            return false
+        }
     }
 
     return false 

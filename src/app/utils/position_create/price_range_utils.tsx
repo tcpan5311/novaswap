@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction } from "react"
+const BUFFER_PERCENTAGE = 0.01
 
 export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, maxPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMinPrice: (price: number) => void, setMinPriceInput: (input: string) => void) => 
 {
@@ -9,12 +10,13 @@ export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefO
     const chartHeight = rect.height
 
     const minAllowedPrice = currentPoolPrice * 0.75
+    const dynamicBuffer = (maxPrice - minAllowedPrice) * BUFFER_PERCENTAGE
 
     let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
 
-    if (newMinPrice > maxPrice - 10) 
+    if (newMinPrice > maxPrice - dynamicBuffer) 
     {
-        newMinPrice = maxPrice - 10
+        newMinPrice = maxPrice - dynamicBuffer
     } 
     else if (newMinPrice < minAllowedPrice) 
     {
@@ -34,12 +36,13 @@ export const handleMaxPriceMove = async (event: MouseEvent, chartRef: React.RefO
     const chartHeight = rect.height
 
     const maxAllowedPrice = currentPoolPrice * 1.25
+    const dynamicBuffer = (maxAllowedPrice - minPrice) * BUFFER_PERCENTAGE
 
     let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
 
-    if (newMaxPrice < minPrice + 10) 
+    if (newMaxPrice < minPrice + dynamicBuffer) 
     {
-        newMaxPrice = minPrice + 10
+        newMaxPrice = minPrice + dynamicBuffer
     } 
     else if (newMaxPrice > maxAllowedPrice) 
     {
@@ -62,7 +65,8 @@ export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => v
 export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
 {
     const minAllowed = currentPoolPrice * 0.75
-    const maxLimit = maxPrice - 10
+    const buffer = (maxPrice - minAllowed) * BUFFER_PERCENTAGE
+    const maxLimit = maxPrice - buffer
 
     let clamped: number
     setMinPrice((prev) => 
@@ -77,7 +81,8 @@ export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number,
 export const handleMaxPrice = async (currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
 {
     const maxAllowed = currentPoolPrice * 1.25
-    const minLimit = minPrice + 10
+    const buffer = (maxAllowed - minPrice) * BUFFER_PERCENTAGE
+    const minLimit = minPrice + buffer
 
     let clamped: number
     setMaxPrice((prev) => 

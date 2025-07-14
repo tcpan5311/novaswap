@@ -14,7 +14,7 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
+import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -131,8 +131,8 @@ export default function PositionCreate()
     const [initialPrice, setInitialPrice] = useState(0)
     const [initialPriceInput, setInitialPriceInput] = useState<string>(initialPrice.toString())
 
-    const [minPrice, setMinPrice] = useState(4545)
-    const [maxPrice, setMaxPrice] = useState(5500)
+    const [minPrice, setMinPrice] = useState(0)
+    const [maxPrice, setMaxPrice] = useState(0)
 
     const [minPriceInput, setMinPriceInput] = useState<string>(minPrice.toString())
     const [maxPriceInput, setMaxPriceInput] = useState<string>(maxPrice.toString())
@@ -255,7 +255,12 @@ export default function PositionCreate()
     {
         const runAllUpdates = async () => 
         {
-            if (!selectedToken1 || !selectedToken2 || fee === null) return
+            if (!validateFirstStep(selectedToken1, selectedToken2, fee)) 
+            {
+                setIsFirstStepValid(false)
+                setRequireInitialPrice(false)
+                return
+            }
             
             const { isValid: firstStepValid, poolExists } = await validateFullFirstStep(selectedToken1, selectedToken2, fee, initialPrice, doesPoolExist)
             setIsFirstStepValid(firstStepValid)
@@ -288,15 +293,42 @@ export default function PositionCreate()
             {
                 currentPrice = initialPrice
             }
-            
 
-            const secondStepValid = validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount, currentPrice)
+            const secondStepValid = await validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount, currentPrice, computeTokenAmount)
             setIsSecondStepValid(secondStepValid)
         }
 
         runAllUpdates()
 
     }, [signer, contracts, deploymentAddresses, selectedToken1, selectedToken2, fee, initialPrice, minPrice, maxPrice, token1Amount, token2Amount, lastEditedField], 500)
+
+    //This needs to be check, there is an issue when third token is selected
+    const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
+    {
+        if (!selectedItem) return
+
+        if (otherToken?.Address === selectedItem.Address) 
+        {
+            setOtherToken(null)
+            setCurrentToken(selectedItem)
+        }
+        else if (currentToken?.Address === selectedItem.Address) 
+        {
+            setCurrentToken(selectedItem)
+        }
+        else 
+        {
+            if (!otherToken && currentToken) 
+            {
+                setOtherToken(currentToken)
+            }
+            setCurrentToken(selectedItem)
+        }
+
+        closeModal()
+    }
+
+    
     
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
@@ -314,7 +346,7 @@ export default function PositionCreate()
 
     const handleStepChange = (nextStep: number) => 
     {
-        processStepChange(nextStep, stepActive, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited)
+        processStepChange(nextStep, stepActive, selectedToken1, selectedToken2, fee, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited, doesPoolExist, initialPrice, getCurrentPoolPrice, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput)
     }
 
     //Toggle visibility of set fee component
@@ -514,8 +546,9 @@ export default function PositionCreate()
             pool = new Pool(tokenA, tokenB, fee ?? 0, sqrtPriceX96, "0", priceToTick(initialPrice ?? 0))
         }
 
-        const tickLower = nearestUsableTick(priceToTick(minPrice), 60)
-        const tickUpper = nearestUsableTick(priceToTick(maxPrice), 60)
+        const buffer = 0.0001
+        const tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
+        const tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
 
         const getAmount = (amountStr: string, token: Token, decimals: number) => CurrencyAmount.fromRawAmount(token, ethers.parseUnits(amountStr, decimals).toString())
 
@@ -583,8 +616,7 @@ export default function PositionCreate()
             currentPrice = initialPrice
         }
 
-        const isBelowMin = currentPrice < minPrice && currentPrice < maxPrice
-        const isAboveMax = currentPrice > maxPrice && currentPrice > minPrice
+        const isOutOfRange = currentPrice < minPrice || currentPrice > maxPrice
 
         const resetAmounts = () => 
         {
@@ -592,13 +624,13 @@ export default function PositionCreate()
             else if (!isAToB && lastEditedField !== "token1") setToken1Amount("0")
         }
 
-        if (isBelowMin || isAboveMax) 
+        if (isOutOfRange) 
         {
             resetAmounts()
             return
         }
 
-        const { amountA, amountB } = await computeTokenAmount(isAToB, trimmed, initialPrice)
+        const { amountA, amountB } = await computeTokenAmount(isAToB, trimmed, currentPrice)
 
         if (isAToB && lastEditedField !== "token2") 
         {
@@ -608,6 +640,8 @@ export default function PositionCreate()
         {
             setToken1Amount(amountA.toString())
         }
+
+        // console.log(`Token 1 Amount: ${amountA}, Price: ${currentPrice}, Token 2 Amount: ${amountB}`)
     }
 
 
@@ -625,26 +659,37 @@ export default function PositionCreate()
             currentPrice = initialPrice
         }
 
-        const isAboveRange = currentPrice > maxPrice && currentPrice > maxPrice
-        const isBelowRange = currentPrice < minPrice && currentPrice < maxPrice
+        const isBelowRange = currentPrice < minPrice
+        const isAboveRange = currentPrice > maxPrice
         const isWithinRange = currentPrice >= minPrice && currentPrice <= maxPrice
 
         if(isAboveRange)
         {
+            console.log("isAboveRange")
             setHideToken1DuringChange(true)
             setHideToken2DuringChange(false)
         }
 
         if(isBelowRange)
         {
+            console.log("isBelowRange")
             setHideToken1DuringChange(false)
             setHideToken2DuringChange(true)
         }
 
         if (isWithinRange)
         {
-            setHideToken1DuringChange(false)
-            setHideToken2DuringChange(false)
+            const resultAtoB = await computeTokenAmount(true, "0.0001", currentPrice)
+            const resultBtoA = await computeTokenAmount(false, "0.0001", currentPrice)
+
+            const amountB_from_A = Number(resultAtoB.amountB)
+            const amountA_from_B = Number(resultBtoA.amountA)
+
+            const token1Disabled = amountA_from_B === 0
+            const token2Disabled = amountB_from_A === 0
+
+            setHideToken1DuringChange(token1Disabled)
+            setHideToken2DuringChange(token2Disabled)
         }
     }
 
@@ -1349,8 +1394,7 @@ export default function PositionCreate()
                     display="block"
                     onClick={() => 
                     {
-                        setSelectedToken1(item)
-                        close1()
+                        handleTokenSelect(item, selectedToken1, selectedToken2, setSelectedToken1, setSelectedToken2, close1)
                     }}
                     >
                     {item.Label}
@@ -1385,8 +1429,7 @@ export default function PositionCreate()
                     display="block"
                     onClick={() => 
                     {
-                        setSelectedToken2(item)
-                        close2()
+                        handleTokenSelect(item, selectedToken2, selectedToken1, setSelectedToken2, setSelectedToken1, close2)
                     }}
                     >
                     {item.Label}
