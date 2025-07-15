@@ -39,7 +39,7 @@ export async function POST() {
     await ethereumContract.waitForDeployment()
     const ethereumContractAddress = await ethereumContract.getAddress()
     const ethereumCallContract = new ethers.Contract(ethereumContractAddress, ERC20Mintable.abi, wallet)
-    const ethereumMintAmount = ethers.parseUnits("100", 18)
+    const ethereumMintAmount = ethers.parseUnits("1000000", 18)
     const ethereumMintTx = await ethereumCallContract.mint(wallet.address, ethereumMintAmount)
     await ethereumMintTx.wait()
 
@@ -57,7 +57,7 @@ export async function POST() {
     await uniswapContract.waitForDeployment()
     const uniswapContractAddress = await uniswapContract.getAddress()
     const uniswapCallContract = new ethers.Contract(uniswapContractAddress, ERC20Mintable.abi, wallet)
-    const uniswapMintAmount = ethers.parseUnits("1000", 18)
+    const uniswapMintAmount = ethers.parseUnits("1000000", 18)
     const uniswapMintTx = await uniswapCallContract.mint(wallet.address, uniswapMintAmount)
     await uniswapMintTx.wait()
 

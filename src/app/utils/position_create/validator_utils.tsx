@@ -14,7 +14,7 @@ export const validateFirstStep = (token1: CryptocurrencyDetail | null, token2: C
     return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee) && !isSameToken
 }
 
-export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, initialPrice: number, doesPoolExistFn: (token1Address: string | null, token2Address: string | null, fee: number | null) => Promise<boolean>): Promise<{ isValid: boolean; poolExists: boolean }> => 
+export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, initialPrice: number, doesPoolExist: (token1Address: string | null, token2Address: string | null, fee: number | null) => Promise<boolean>): Promise<{ isValid: boolean; poolExists: boolean }> => 
 {
 
     if (!validateFirstStep(token1, token2, fee)) return { isValid: false, poolExists: false }
@@ -22,7 +22,7 @@ export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null,
     const token1Address = token1?.Address ?? null
     const token2Address = token2?.Address ?? null
 
-    const poolExists = await doesPoolExistFn(token1Address, token2Address, fee)
+    const poolExists = await doesPoolExist(token1Address, token2Address, fee)
     const isValid = poolExists || initialPrice > 0
 
     return { isValid, poolExists }
@@ -47,8 +47,6 @@ export const validateSecondStep = async (token1: CryptocurrencyDetail | null, to
     const isAboveRange = price > maxPrice
     const isBelowRange = price < minPrice
     const isWithinRange = price >= minPrice && price <= maxPrice
-
-    
 
     if (isAboveRange) 
     {

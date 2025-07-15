@@ -43,8 +43,6 @@ export const processStepChange = async (
     setFee: (val: any) => void, 
     setStepActive: (val: number) => void, 
     setHighestStepVisited: (fn: (prev: number) => number) => void,     
-    doesPoolExistFn: (token1Address: string | null, token2Address: string | null, fee: number | null) => Promise<boolean>,
-    initialPrice: number,   
     getCurrentPoolPrice: () => Promise<number | null | undefined>,
     setMinPrice: (val: number) => void,
     setMaxPrice: (val: number) => void,
@@ -64,17 +62,7 @@ export const processStepChange = async (
         setStepActive(nextStep + 1)
         setHighestStepVisited(prev => Math.max(prev, nextStep))
 
-        const poolExists = await doesPoolExistFn(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-        let currentPrice: number
-        if (poolExists) 
-        {
-            currentPrice = await getCurrentPoolPrice() ?? 0
-        } 
-        else 
-        {
-            currentPrice = initialPrice
-        }
+        let currentPrice = await getCurrentPoolPrice() ?? 0
 
         const minPrice = Math.floor(currentPrice * 0.85)
         const maxPrice = Math.ceil(currentPrice * 1.15)

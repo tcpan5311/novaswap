@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage, IconChevronUp, IconTagPlus } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import JSBI from 'jsbi'
-import { ethers } from 'ethers'
+import { ethers, isAddress } from 'ethers'
 import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
@@ -202,17 +202,7 @@ export default function PositionCreate()
     {
         if (!isFirstStepValid) return
         
-        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-        let currentPrice: number
-        if (poolExist) 
-        {
-            currentPrice = await getCurrentPoolPrice() ?? 0
-        } 
-        else 
-        {
-            currentPrice = initialPrice
-        }
+        let currentPrice = await getCurrentPoolPrice() ?? 0
 
         const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
         {
@@ -282,17 +272,7 @@ export default function PositionCreate()
                 await updateTokenAmounts(false, token2Amount) // convert B → A
             }
 
-            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-            let currentPrice: number
-            if (poolExist) 
-            {
-                currentPrice = await getCurrentPoolPrice() ?? 0
-            } 
-            else 
-            {
-                currentPrice = initialPrice
-            }
+            let currentPrice = await getCurrentPoolPrice() ?? 0
 
             const secondStepValid = await validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount, currentPrice, computeTokenAmount)
             setIsSecondStepValid(secondStepValid)
@@ -302,7 +282,6 @@ export default function PositionCreate()
 
     }, [signer, contracts, deploymentAddresses, selectedToken1, selectedToken2, fee, initialPrice, minPrice, maxPrice, token1Amount, token2Amount, lastEditedField], 500)
 
-    //This needs to be check, there is an issue when third token is selected
     const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
     {
         if (!selectedItem) return
@@ -328,8 +307,6 @@ export default function PositionCreate()
         closeModal()
     }
 
-    
-    
     //Stepper logic implementation
     const [stepActive, setStepActive] = useState(1)
     const [highestStepVisited, setHighestStepVisited] = useState(stepActive)
@@ -346,7 +323,7 @@ export default function PositionCreate()
 
     const handleStepChange = (nextStep: number) => 
     {
-        processStepChange(nextStep, stepActive, selectedToken1, selectedToken2, fee, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited, doesPoolExist, initialPrice, getCurrentPoolPrice, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput)
+        processStepChange(nextStep, stepActive, selectedToken1, selectedToken2, fee, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput)
     }
 
     //Toggle visibility of set fee component
@@ -380,18 +357,7 @@ export default function PositionCreate()
     const validateMinPrice = async () => 
     {
 
-        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-        let currentPrice: number
-        if (poolExist) 
-        {
-            currentPrice = await getCurrentPoolPrice() ?? 0
-        } 
-        else 
-        {
-            currentPrice = initialPrice
-        }
-
+        let currentPrice = await getCurrentPoolPrice() ?? 0
         const clampedMin = await handleMinPrice(currentPrice, maxPrice, setMinPrice)
 
         if (clampedMin != null)
@@ -404,17 +370,7 @@ export default function PositionCreate()
     {
         if(isFirstStepValid) 
         {
-            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-            let currentPrice: number
-            if (poolExist) 
-            {
-                currentPrice = await getCurrentPoolPrice() ?? 0
-            } 
-            else 
-            {
-                currentPrice = initialPrice
-            }
+            let currentPrice = await getCurrentPoolPrice() ?? 0
             const clampedMax = await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
 
             if (clampedMax != null)
@@ -439,8 +395,6 @@ export default function PositionCreate()
         return ratio ** 2
     }
 
-    // const priceToSqrtP = (price: number) => encodeSqrtRatioX96(price, 1)
-
     const priceToSqrtP = (price: number) => 
     {
         const DECIMALS = 18
@@ -456,46 +410,51 @@ export default function PositionCreate()
 
     const getCurrentPoolPrice = async () => 
     {
-        
-        if (signer && deploymentAddresses && contracts) 
+        if(uniswapV3FactoryContract && selectedToken1 && selectedToken2 && fee)
         {
-            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-            if (!poolExist) 
+            const poolExist = await doesPoolExist(selectedToken1.Address, selectedToken2.Address, fee)
+            if (poolExist) 
             {
-                return
+                try 
+                {
+                    const poolAddress = await uniswapV3FactoryContract.getPoolAddress(selectedToken1.Address, selectedToken2.Address, fee)
+                    const poolCallContract = getPoolContract(poolAddress)
+                    const slot0 = await poolCallContract?.slot0()
+                    const sqrtPriceX96 = slot0.sqrtPriceX96
+                    const price = sqrtPToPriceNumber(sqrtPriceX96)
+                    return price
+                } 
+                catch (error) 
+                {
+                    console.log(error)
+                    return null
+                }
             }
-
-            try 
+            else
             {
-                const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
-                const poolCallContract = getPoolContract(poolAddress)
-                const slot0 = await poolCallContract?.slot0()
-                const sqrtPriceX96 = slot0.sqrtPriceX96
-                const price = sqrtPToPriceNumber(sqrtPriceX96)
+                const price = initialPrice
                 return price
-            } 
-            catch (error) 
-            {
-                console.log(error)
-                return null
             }
         }
     }
 
     const doesPoolExist = async (token1Address: string | null, token2Address: string | null, fee: number | null): Promise<boolean> => 
     {
-        if (!uniswapV3FactoryContract || !token1Address || !token2Address || fee === null) return false
-
-        try 
+        if (uniswapV3FactoryContract && token1Address && token2Address && fee) 
         {
-            const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token1Address, token2Address, fee)
-            return poolAddress !== '0x0000000000000000000000000000000000000000'
-        } 
-        catch (error) 
-        {
-            console.error("Error checking pool existence:", error)
-            return false
+            try 
+            {
+                const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token1Address, token2Address, fee)
+                return poolAddress !== '0x0000000000000000000000000000000000000000'
+            } 
+            catch (error) 
+            {
+                console.error("Error checking pool existence:", error)
+                return false
+            }
         }
+
+        return false
     }
 
     const computeTokenAmount = async (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => 
@@ -602,19 +561,9 @@ export default function PositionCreate()
             return
         }
 
-        if (!isFirstStepValid || !signer || !deploymentAddresses || !contracts) return
+        // if (!isFirstStepValid || !signer || !deploymentAddresses || !contracts) return
 
-        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-        let currentPrice: number
-        if (poolExist) 
-        {
-            currentPrice = await getCurrentPoolPrice() ?? 0
-        } 
-        else 
-        {
-            currentPrice = initialPrice
-        }
+        let currentPrice = await getCurrentPoolPrice() ?? 0
 
         const isOutOfRange = currentPrice < minPrice || currentPrice > maxPrice
 
@@ -647,17 +596,7 @@ export default function PositionCreate()
 
     const handleTokenInputDisplay = async() =>
     {
-        const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-
-        let currentPrice: number
-        if (poolExist) 
-        {
-            currentPrice = await getCurrentPoolPrice() ?? 0
-        } 
-        else 
-        {
-            currentPrice = initialPrice
-        }
+        let currentPrice = await getCurrentPoolPrice() ?? 0
 
         const isBelowRange = currentPrice < minPrice
         const isAboveRange = currentPrice > maxPrice
@@ -695,30 +634,26 @@ export default function PositionCreate()
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
     {
-        if (!tokenAddress) 
-        {
-            return
-        }
-
-        const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
+        const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
         const parsedAmount = ethers.parseEther(amount)
         await approveTokenContract.approve(spenderAddress, parsedAmount)
     }
     
     const addLiquidity = async () => 
     {
-        if (!signer || !isConnected) return
-        
-        if (signer && deploymentAddresses && contracts) 
+        let currentPrice = await getCurrentPoolPrice() ?? 0
+        console.log(currentPrice, selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
+
+        if (isConnected && signer && deploymentAddresses && contracts && selectedToken1 && selectedToken2 && fee && minPrice && maxPrice && token1Amount && token2Amount) 
         {
             try
             {
-                const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
+                const poolExist = await doesPoolExist(selectedToken1.Address, selectedToken2.Address, fee)
                 if (!poolExist) 
                 {
-                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1?.Address, selectedToken2?.Address, fee)
+                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1.Address, selectedToken2.Address, fee)
                     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1.Address, selectedToken2.Address, fee)
                     const poolCallContract = getPoolContract(poolAddress) 
                     const sqrtPriceX96 = priceToSqrtPBigNumber(initialPrice)
                     const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
@@ -726,21 +661,30 @@ export default function PositionCreate()
                     console.log(poolInitializeTxReceipt)
                 }
 
-                await approveTokenTransaction(selectedToken1?.Address ?? null, nftManagerContractAddress,token1Amount, signer)
-                await approveTokenTransaction(selectedToken2?.Address ?? null, nftManagerContractAddress,token2Amount, signer)
+                const token0 = selectedToken1.Address.toLowerCase() < selectedToken2.Address.toLowerCase() ? selectedToken1 : selectedToken2
+                const token1 = selectedToken1.Address.toLowerCase() < selectedToken2.Address.toLowerCase() ? selectedToken2 : selectedToken1
+
+                const rawAmount0 = token0.Address === selectedToken1.Address ? token1Amount : token2Amount
+                const rawAmount1 = token1.Address === selectedToken2.Address ? token2Amount : token1Amount
+
+                const amount0Desired = ethers.parseEther(rawAmount0)
+                const amount1Desired = ethers.parseEther(rawAmount1)
+
+                await approveTokenTransaction(token0.Address, nftManagerContractAddress, rawAmount0, signer)
+                await approveTokenTransaction(token1.Address, nftManagerContractAddress, rawAmount1, signer)
 
                 const mintParams = 
                 {
                     recipient: await signer.getAddress(),
-                    tokenA: selectedToken1?.Address,
-                    tokenB: selectedToken2?.Address,
+                    tokenA: selectedToken1.Address,
+                    tokenB: selectedToken2.Address,
                     fee: fee,
-                    lowerTick: nearestUsableTick(priceToTick(minPrice), 60), //4545
-                    upperTick: nearestUsableTick(priceToTick(maxPrice), 60), //5500
-                    amount0Desired: ethers.parseEther(token1Amount), //1
-                    amount1Desired: ethers.parseEther(token2Amount), //5000
+                    lowerTick: nearestUsableTick(priceToTick(minPrice), 60),
+                    upperTick: nearestUsableTick(priceToTick(maxPrice), 60),
+                    amount0Desired,
+                    amount1Desired,
                     amount0Min: 0,
-                    amount1Min: 0,
+                    amount1Min: 0
                 }
 
                 const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
@@ -751,7 +695,6 @@ export default function PositionCreate()
             {
                 console.log(error)
             }
-
         }
     }
 
