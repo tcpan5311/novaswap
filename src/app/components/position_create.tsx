@@ -313,7 +313,7 @@ export default function PositionCreate()
 
     const handleStepClick = (step: number) => 
     {
-        processStepClick(step, highestStepVisited, stepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setStepActive)
+        processStepClick(step, highestStepVisited, setStepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
     }
 
     const shouldAllowSelectStep = (step: number) => 
@@ -323,7 +323,7 @@ export default function PositionCreate()
 
     const handleStepChange = (nextStep: number) => 
     {
-        processStepChange(nextStep, stepActive, selectedToken1, selectedToken2, fee, setSelectedToken1, setSelectedToken2, setFee, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput)
+        processStepChange(nextStep, stepActive, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
     }
 
     //Toggle visibility of set fee component
@@ -560,24 +560,21 @@ export default function PositionCreate()
             setToken2Amount("")
             return
         }
-
-        // if (!isFirstStepValid || !signer || !deploymentAddresses || !contracts) return
-
         let currentPrice = await getCurrentPoolPrice() ?? 0
 
-        const isOutOfRange = currentPrice < minPrice || currentPrice > maxPrice
+        // const isOutOfRange = currentPrice < minPrice || currentPrice > maxPrice
 
-        const resetAmounts = () => 
-        {
-            if (isAToB && lastEditedField !== "token2") setToken2Amount("0")
-            else if (!isAToB && lastEditedField !== "token1") setToken1Amount("0")
-        }
+        // const resetAmounts = () => 
+        // {
+        //     if (isAToB && lastEditedField !== "token2") setToken2Amount("0")
+        //     else if (!isAToB && lastEditedField !== "token1") setToken1Amount("0")
+        // }
 
-        if (isOutOfRange) 
-        {
-            resetAmounts()
-            return
-        }
+        // if (isOutOfRange) 
+        // {
+        //     resetAmounts()
+        //     return
+        // }
 
         const { amountA, amountB } = await computeTokenAmount(isAToB, trimmed, currentPrice)
 
@@ -596,25 +593,12 @@ export default function PositionCreate()
 
     const handleTokenInputDisplay = async() =>
     {
+        //There is issue with this handle token input display, it hide even the range is near
         let currentPrice = await getCurrentPoolPrice() ?? 0
 
+        const isWithinRange = currentPrice >= minPrice && currentPrice <= maxPrice
         const isBelowRange = currentPrice < minPrice
         const isAboveRange = currentPrice > maxPrice
-        const isWithinRange = currentPrice >= minPrice && currentPrice <= maxPrice
-
-        if(isAboveRange)
-        {
-            console.log("isAboveRange")
-            setHideToken1DuringChange(true)
-            setHideToken2DuringChange(false)
-        }
-
-        if(isBelowRange)
-        {
-            console.log("isBelowRange")
-            setHideToken1DuringChange(false)
-            setHideToken2DuringChange(true)
-        }
 
         if (isWithinRange)
         {
@@ -630,6 +614,20 @@ export default function PositionCreate()
             setHideToken1DuringChange(token1Disabled)
             setHideToken2DuringChange(token2Disabled)
         }
+        else if(isAboveRange)
+        {
+            console.log("isAboveRange")
+            setHideToken1DuringChange(true)
+            setHideToken2DuringChange(false)
+        }
+
+        else if(isBelowRange)
+        {
+            console.log("isBelowRange")
+            setHideToken1DuringChange(false)
+            setHideToken2DuringChange(true)
+        }
+
     }
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 

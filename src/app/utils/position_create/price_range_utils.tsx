@@ -64,7 +64,7 @@ export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => v
 
 export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
 {
-    const minAllowed = currentPoolPrice * 0.75
+    const minAllowed = currentPoolPrice * 0.85
     const buffer = (maxPrice - minAllowed) * BUFFER_PERCENTAGE
     const maxLimit = maxPrice - buffer
 
@@ -80,7 +80,7 @@ export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number,
 
 export const handleMaxPrice = async (currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
 {
-    const maxAllowed = currentPoolPrice * 1.25
+    const maxAllowed = currentPoolPrice * 1.15
     const buffer = (maxAllowed - minPrice) * BUFFER_PERCENTAGE
     const minLimit = minPrice + buffer
 
