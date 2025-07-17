@@ -140,9 +140,6 @@ export default function PositionCreate()
     const [token1Amount, setToken1Amount] = useState<string>('')
     const [token2Amount, setToken2Amount] = useState<string>('')
 
-    const [token1Only, setToken1Only] = useState<boolean>(false)
-    const [token2Only, setToken2Only] = useState<boolean>(false)
-
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
 
@@ -457,7 +454,7 @@ export default function PositionCreate()
         return false
     }
 
-    const computeTokenAmount = async (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => 
+    const computeTokenAmount = async (isAToB: boolean, overrideAmount?: string, currentPrice?: number) => 
     {
         const network = await provider?.getNetwork()
         const chainId = Number(network?.chainId)
@@ -493,7 +490,7 @@ export default function PositionCreate()
             (
                 tokenA,
                 tokenB,
-                3000,
+                fee ?? 0,
                 sqrtPriceX96,
                 liquidity.toString(),
                 Number(currentTick)
@@ -501,8 +498,8 @@ export default function PositionCreate()
         } 
         catch 
         {
-            const sqrtPriceX96 = encodeSqrtRatioX96(ethers.parseUnits((initialPrice ?? 0).toString(), decimalA).toString(), ethers.parseUnits("1", decimalB).toString()).toString()
-            pool = new Pool(tokenA, tokenB, fee ?? 0, sqrtPriceX96, "0", priceToTick(initialPrice ?? 0))
+            const sqrtPriceX96 = encodeSqrtRatioX96(ethers.parseUnits((currentPrice ?? 0).toString(), decimalA).toString(), ethers.parseUnits("1", decimalB).toString()).toString()
+            pool = new Pool(tokenA, tokenB, fee ?? 0, sqrtPriceX96, "0", priceToTick(currentPrice ?? 0))
         }
 
         const buffer = 0.0001
@@ -512,47 +509,73 @@ export default function PositionCreate()
         const getAmount = (amountStr: string, token: Token, decimals: number) => CurrencyAmount.fromRawAmount(token, ethers.parseUnits(amountStr, decimals).toString())
 
         let amountTokenA: CurrencyAmount<Token>, amountTokenB: CurrencyAmount<Token>
+        const MAX_REASONABLE_AMOUNT = JSBI.exponentiate(JSBI.BigInt(10), JSBI.BigInt(36))
 
-        if (isAToB) 
+        try 
         {
-            const amountStr = overrideAmount ?? token1Amount
-            amountTokenA = getAmount(amountStr, tokenA, decimalA)
+            if (isAToB) 
+            {
+                const amountStr = overrideAmount ?? token1Amount
+                amountTokenA = getAmount(amountStr, tokenA, decimalA)
 
-            const position = Position.fromAmount0
-            ({
-                pool, 
-                tickLower, 
-                tickUpper,
-                amount0: amountTokenA.quotient,
-                useFullPrecision: true
-            })
+                const position = Position.fromAmount0
+                ({
+                    pool, 
+                    tickLower, 
+                    tickUpper,
+                    amount0: amountTokenA.quotient,
+                    useFullPrecision: true
+                })
 
-            amountTokenB = position.amount1
-        } 
-        else 
-        {
-            const amountStr = overrideAmount ?? token2Amount
-            amountTokenB = getAmount(amountStr, tokenB, decimalB)
+                amountTokenB = position.amount1
+                
+            } 
+            else 
+            {
+                const amountStr = overrideAmount ?? token2Amount
+                amountTokenB = getAmount(amountStr, tokenB, decimalB)
 
-            const position = Position.fromAmount1
-            ({
-                pool, 
-                tickLower, 
-                tickUpper,
-                amount1: amountTokenB.quotient
-            })
+                const position = Position.fromAmount1
+                ({
+                    pool, 
+                    tickLower, 
+                    tickUpper,
+                    amount1: amountTokenB.quotient
+                })
 
-            amountTokenA = position.amount0
+                amountTokenA = position.amount0
+            }
+
+            if (JSBI.greaterThan(amountTokenA.quotient, MAX_REASONABLE_AMOUNT) || JSBI.greaterThan(amountTokenB.quotient, MAX_REASONABLE_AMOUNT)) 
+            {
+                return {
+                    amountA: "0",
+                    amountB: "0"
+                }
+            }
+
+            return {
+                amountA: amountTokenA.toSignificant(4),
+                amountB: amountTokenB.toSignificant(4)
+            }
         }
-
-        return {
-            amountA: amountTokenA.toSignificant(4),
-            amountB: amountTokenB.toSignificant(4)
+        catch (error)
+        {
+            return {
+                amountA: "0",
+                amountB: "0"
+            }
         }
     }
 
     const updateTokenAmounts = async (isAToB: boolean, inputValue: string) => 
     {
+
+        if(!selectedToken1 || !selectedToken2 || !fee || !minPrice || !maxPrice)
+        {
+            return
+        }
+
         const trimmed = inputValue.trim()
         if (trimmed === "") 
         {
@@ -562,19 +585,10 @@ export default function PositionCreate()
         }
         let currentPrice = await getCurrentPoolPrice() ?? 0
 
-        // const isOutOfRange = currentPrice < minPrice || currentPrice > maxPrice
-
-        // const resetAmounts = () => 
-        // {
-        //     if (isAToB && lastEditedField !== "token2") setToken2Amount("0")
-        //     else if (!isAToB && lastEditedField !== "token1") setToken1Amount("0")
-        // }
-
-        // if (isOutOfRange) 
-        // {
-        //     resetAmounts()
-        //     return
-        // }
+        if (!currentPrice || currentPrice <= 0) 
+        {
+            return
+        }
 
         const { amountA, amountB } = await computeTokenAmount(isAToB, trimmed, currentPrice)
 
@@ -590,44 +604,26 @@ export default function PositionCreate()
         // console.log(`Token 1 Amount: ${amountA}, Price: ${currentPrice}, Token 2 Amount: ${amountB}`)
     }
 
-
-    const handleTokenInputDisplay = async() =>
+    const handleTokenInputDisplay = async () => 
     {
-        //There is issue with this handle token input display, it hide even the range is near
-        let currentPrice = await getCurrentPoolPrice() ?? 0
+        if (!selectedToken1 || !selectedToken2 || !fee || !minPrice || !maxPrice) return
 
-        const isWithinRange = currentPrice >= minPrice && currentPrice <= maxPrice
-        const isBelowRange = currentPrice < minPrice
-        const isAboveRange = currentPrice > maxPrice
+        const currentPrice = (await getCurrentPoolPrice()) ?? 0
+        const currentTick = nearestUsableTick(priceToTick(currentPrice), 60)
+        if (!currentTick) return
+        
+        const buffer = 0.0001
+        const tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
+        const tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
 
-        if (isWithinRange)
-        {
-            const resultAtoB = await computeTokenAmount(true, "0.0001", currentPrice)
-            const resultBtoA = await computeTokenAmount(false, "0.0001", currentPrice)
+        const isBelowRange = currentTick < tickLower
+        const isAboveRange = currentTick > tickUpper
 
-            const amountB_from_A = Number(resultAtoB.amountB)
-            const amountA_from_B = Number(resultBtoA.amountA)
+        const newHideToken2 = isBelowRange    
+        const newHideToken1 = isAboveRange     
 
-            const token1Disabled = amountA_from_B === 0
-            const token2Disabled = amountB_from_A === 0
-
-            setHideToken1DuringChange(token1Disabled)
-            setHideToken2DuringChange(token2Disabled)
-        }
-        else if(isAboveRange)
-        {
-            console.log("isAboveRange")
-            setHideToken1DuringChange(true)
-            setHideToken2DuringChange(false)
-        }
-
-        else if(isBelowRange)
-        {
-            console.log("isBelowRange")
-            setHideToken1DuringChange(false)
-            setHideToken2DuringChange(true)
-        }
-
+        setHideToken1DuringChange(newHideToken1)
+        setHideToken2DuringChange(newHideToken2)
     }
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
