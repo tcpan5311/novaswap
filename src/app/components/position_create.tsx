@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select} from '@mantine/core'
+import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select} from '@mantine/core'
 // import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
 import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage, IconChevronUp, IconTagPlus } from '@tabler/icons-react'
@@ -52,6 +52,22 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
         lowestPrice,
         graphMaxPrice,
         graphMinPrice
+    }
+}
+
+const getCanonicalOrder = (tokenA: CryptocurrencyDetail, tokenB: CryptocurrencyDetail) => 
+{
+    const token1First = tokenA.Label.toLowerCase() < tokenB.Label.toLowerCase()
+
+    return token1First ? 
+    {
+        token1: tokenA,
+        token2: tokenB
+    }
+    : 
+    {
+        token1: tokenB,
+        token2: tokenA
     }
 }
 
@@ -152,6 +168,7 @@ export default function PositionCreate()
     const [hideToken2DuringChange, setHideToken2DuringChange] = useState(false)
 
     const [lastEditedField, setLastEditedField] = useState<"token1" | "token2" | null>(null)
+    const [loading, setLoading] = useState(false)
 
     useDebounceEffect(() => 
     {
@@ -318,10 +335,48 @@ export default function PositionCreate()
         return shouldAllowStep(step, highestStepVisited)
     }
 
-    const handleStepChange = (nextStep: number) => 
-    {
-        processStepChange(nextStep, stepActive, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
-    }
+    const handleNext = () => processStepChange(
+        'next', 
+        stepActive, 
+        setStepActive, 
+        setHighestStepVisited,
+        getCurrentPoolPrice, 
+        setSelectedToken1, 
+        setSelectedToken2,
+        setFee, 
+        setInitialPrice, 
+        setInitialPriceInput,
+        setMinPrice, 
+        setMaxPrice, 
+        setMinPriceInput, 
+        setMaxPriceInput,
+        setToken1Amount, 
+        setToken2Amount
+    )
+
+    const handleBack = () => processStepChange(
+    'back', 
+    stepActive, 
+    setStepActive, 
+    setHighestStepVisited,
+    getCurrentPoolPrice, 
+    setSelectedToken1, 
+    setSelectedToken2,
+    setFee, 
+    setInitialPrice, 
+    setInitialPriceInput,
+    setMinPrice, 
+    setMaxPrice, 
+    setMinPriceInput, 
+    setMaxPriceInput,
+    setToken1Amount, 
+    setToken2Amount
+    )
+
+    // const handleStepChange = (nextStep: number) => 
+    // {
+    //     processStepChange(nextStep, stepActive, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
+    // }
 
     //Toggle visibility of set fee component
     const [isVisible, setIsVisible] = useState(true)
@@ -635,11 +690,15 @@ export default function PositionCreate()
     
     const addLiquidity = async () => 
     {
+
         let currentPrice = await getCurrentPoolPrice() ?? 0
-        console.log(currentPrice, selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount)
 
         if (isConnected && signer && deploymentAddresses && contracts && selectedToken1 && selectedToken2 && fee && minPrice && maxPrice && token1Amount && token2Amount) 
         {
+            setLoading(true)
+            const { token1, token2} = getCanonicalOrder(selectedToken1, selectedToken2)
+            console.log(token1, token2, token1Amount, token2Amount)
+
             try
             {
                 const poolExist = await doesPoolExist(selectedToken1.Address, selectedToken2.Address, fee)
@@ -655,23 +714,23 @@ export default function PositionCreate()
                     console.log(poolInitializeTxReceipt)
                 }
 
-                const token0 = selectedToken1.Address.toLowerCase() < selectedToken2.Address.toLowerCase() ? selectedToken1 : selectedToken2
-                const token1 = selectedToken1.Address.toLowerCase() < selectedToken2.Address.toLowerCase() ? selectedToken2 : selectedToken1
+                const amount0Desired = ethers.parseEther(token1Amount)
+                const amount1Desired = ethers.parseEther(token2Amount)
 
-                const rawAmount0 = token0.Address === selectedToken1.Address ? token1Amount : token2Amount
-                const rawAmount1 = token1.Address === selectedToken2.Address ? token2Amount : token1Amount
-
-                const amount0Desired = ethers.parseEther(rawAmount0)
-                const amount1Desired = ethers.parseEther(rawAmount1)
-
-                await approveTokenTransaction(token0.Address, nftManagerContractAddress, rawAmount0, signer)
-                await approveTokenTransaction(token1.Address, nftManagerContractAddress, rawAmount1, signer)
+                if (parseFloat(token1Amount) > 0) 
+                {
+                    await approveTokenTransaction(token1.Address, nftManagerContractAddress, token1Amount, signer)
+                }
+                if (parseFloat(token2Amount) > 0) 
+                {
+                    await approveTokenTransaction(token2.Address, nftManagerContractAddress, token2Amount, signer)
+                }
 
                 const mintParams = 
                 {
                     recipient: await signer.getAddress(),
-                    tokenA: selectedToken1.Address,
-                    tokenB: selectedToken2.Address,
+                    tokenA: token1.Address,
+                    tokenB: token2.Address,
                     fee: fee,
                     lowerTick: nearestUsableTick(priceToTick(minPrice), 60),
                     upperTick: nearestUsableTick(priceToTick(maxPrice), 60),
@@ -684,10 +743,15 @@ export default function PositionCreate()
                 const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
                 const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
                 console.log(nftManagerMintLiquidityTx)
+
+                handleBack()
+                setLoading(false)
             }
             catch(error)
             {
                 console.log(error)
+                handleBack()
+                setLoading(false)
             }
         }
     }
@@ -711,6 +775,18 @@ export default function PositionCreate()
                 console.log("Position:", position)
             }
         }
+    }
+
+    const testOverlay = async () => 
+    {
+        setLoading(true)
+
+        // Wait 3 seconds, then hide it
+        setTimeout(() => 
+        {
+            setLoading(false)
+            // handleBack()
+        }, 3000)
     }
 
     const quotePool = async () => 
@@ -769,13 +845,14 @@ export default function PositionCreate()
     }
 
     return (
-        <>
+        <Box pos="relative">
+            <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
             {/* Test function for quotePool and swapToken */}
             <Button
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={getPosition}
+            onClick={testOverlay}
             >
             Test initial
             </Button>
@@ -985,7 +1062,7 @@ export default function PositionCreate()
                                 fullWidth
                                 radius="md"
                                 className="mt-[5%]"
-                                onClick={() => handleStepChange(stepActive)}
+                                onClick={handleNext}
                                 disabled={!isFirstStepValid}
                             >
                                 Continue
@@ -1375,7 +1452,7 @@ export default function PositionCreate()
                 </ScrollArea>
             </Modal>
 
-        </>
+        </Box>
 
     )
 }
