@@ -385,7 +385,8 @@ export default function PositionCreate()
     {
         setIsVisible((prev) => !prev)
     }
-        function validatePriceInput(input: string, maxDecimalsForOneOrMore = 4): number | null 
+    
+    const validatePriceInput = (input: string, maxDecimalsForOneOrMore = 4): number | null => 
     {
         input = input.trim()
 
@@ -656,30 +657,85 @@ export default function PositionCreate()
             setToken1Amount(amountA.toString())
         }
 
-        // console.log(`Token 1 Amount: ${amountA}, Price: ${currentPrice}, Token 2 Amount: ${amountB}`)
+        console.log(`Token 1 Amount: ${amountA}, Price: ${currentPrice}, Token 2 Amount: ${amountB}`)
     }
 
     const handleTokenInputDisplay = async () => 
     {
         if (!selectedToken1 || !selectedToken2 || !fee || !minPrice || !maxPrice) return
 
-        const currentPrice = (await getCurrentPoolPrice()) ?? 0
-        const currentTick = nearestUsableTick(priceToTick(currentPrice), 60)
-        if (!currentTick) return
-        
-        const buffer = 0.0001
-        const tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
-        const tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
+        try 
+        {
+            const currentPrice = (await getCurrentPoolPrice()) ?? 0
 
-        const isBelowRange = currentTick < tickLower
-        const isAboveRange = currentTick > tickUpper
+            const threshold = 1e-12
 
-        const newHideToken2 = isBelowRange    
-        const newHideToken1 = isAboveRange     
+            const resultAtoB = await computeTokenAmount(true, "0.0001", currentPrice)
+            const amountA = parseFloat(resultAtoB?.amountA ?? "0")
+            const amountB = parseFloat(resultAtoB?.amountB ?? "0")
 
-        setHideToken1DuringChange(newHideToken1)
-        setHideToken2DuringChange(newHideToken2)
+            if (amountA >= threshold && amountB < threshold) 
+            {
+                // Can convert A to 0 B → hide token2
+                setHideToken1DuringChange(false)
+                setHideToken2DuringChange(true)
+                return
+            }
+
+            if (amountB >= threshold && amountA < threshold) 
+            {
+                // Can convert B but token1 is 0 → hide token1
+                setHideToken1DuringChange(true)
+                setHideToken2DuringChange(false)
+                return
+            }
+
+            if (amountA >= threshold && amountB >= threshold) 
+            {
+                // Both amounts are valid → show both
+                setHideToken1DuringChange(false)
+                setHideToken2DuringChange(false)
+                return
+            }
+
+            // Fallback: Try B→A
+            const resultBtoA = await computeTokenAmount(false, "0.0001", currentPrice)
+            const reverseAmountA = parseFloat(resultBtoA?.amountA ?? "0")
+            const reverseAmountB = parseFloat(resultBtoA?.amountB ?? "0")
+
+            if (reverseAmountB >= threshold && reverseAmountA < threshold) 
+            {
+                setHideToken1DuringChange(true)
+                setHideToken2DuringChange(false)
+                return
+            }
+
+            if (reverseAmountA >= threshold && reverseAmountB < threshold) 
+            {
+                setHideToken1DuringChange(false)
+                setHideToken2DuringChange(true)
+                return
+            }
+
+            if (reverseAmountA >= threshold && reverseAmountB >= threshold) 
+            {
+                setHideToken1DuringChange(false)
+                setHideToken2DuringChange(false)
+                return
+            }
+
+            // Both paths returned 0 → show both
+            setHideToken1DuringChange(false)
+            setHideToken2DuringChange(false)
+        } 
+        catch (error) 
+        {
+            console.log(error)
+        }
     }
+
+
+
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
     {
@@ -697,7 +753,7 @@ export default function PositionCreate()
         {
             setLoading(true)
             const { token1, token2} = getCanonicalOrder(selectedToken1, selectedToken2)
-            console.log(token1, token2, token1Amount, token2Amount)
+            console.log(token1, token2, fee, currentPrice, token1Amount, token2Amount)
 
             try
             {
@@ -777,17 +833,28 @@ export default function PositionCreate()
         }
     }
 
-    const testOverlay = async () => 
-    {
-        setLoading(true)
 
-        // Wait 3 seconds, then hide it
-        setTimeout(() => 
-        {
-            setLoading(false)
-            // handleBack()
-        }, 3000)
+    const getTwapPrice = async (secondsAgo: number) => 
+    {
+        const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+        const poolContract = getPoolContract(poolAddressTest)
+
+        const secondsAgos = [secondsAgo, 0]
+        const { tickCumulatives } = await poolContract?.observe(secondsAgos)
+
+        const tickCumulativeDelta = tickCumulatives[1] - tickCumulatives[0]
+        const averageTick = Math.floor(tickCumulativeDelta / secondsAgo)
+
+        const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(averageTick).toString() // Returns a string
+        const sqrtPriceBigInt = BigInt(sqrtPriceX96)
+
+        const priceX192 = sqrtPriceBigInt * sqrtPriceBigInt
+        const price = priceX192 >> 192n // Shift right by 192 bits
+
+        console.log("TWAP Price:", price.toString())
+        return price
     }
+    
 
     const quotePool = async () => 
     {   
@@ -852,7 +919,7 @@ export default function PositionCreate()
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={testOverlay}
+            onClick={() => getTwapPrice(60)}
             >
             Test initial
             </Button>

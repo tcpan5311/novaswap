@@ -1,3 +1,19 @@
+import {TickMath, nearestUsableTick, encodeSqrtRatioX96} from '@uniswap/v3-sdk'
+import JSBI from 'jsbi'
+
+const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
+
+const priceToSqrtP = (price: number) => 
+{
+    const DECIMALS = 18
+    const SCALE = 10 ** DECIMALS
+
+    const numerator = JSBI.BigInt(Math.round(price * SCALE))
+    const denominator = JSBI.BigInt(SCALE)
+
+    return encodeSqrtRatioX96(numerator, denominator)
+}
+
 export interface CryptocurrencyDetail 
 {
     Label: string
@@ -28,7 +44,17 @@ export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null,
     return { isValid, poolExists }
 }
 
-export const validateSecondStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, minPrice: number, maxPrice: number, token1Amount: string | null, token2Amount: string | null, currentPrice: number | null, computeTokenAmount: (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => Promise<{ amountA: string, amountB: string }>): Promise<boolean> => 
+export const validateSecondStep = async (
+    token1: CryptocurrencyDetail | null,
+    token2: CryptocurrencyDetail | null,
+    fee: number | null,
+    minPrice: number,
+    maxPrice: number,
+    token1Amount: string | null,
+    token2Amount: string | null,
+    currentPrice: number | null,
+    computeTokenAmount: (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => Promise<{ amountA: string, amountB: string }>
+): Promise<boolean> => 
 {
     if (!validateFirstStep(token1, token2, fee)) 
     {
@@ -44,54 +70,62 @@ export const validateSecondStep = async (token1: CryptocurrencyDetail | null, to
     }
 
     const price = currentPrice ?? 0
-    const isAboveRange = price > maxPrice
-    const isBelowRange = price < minPrice
-    const isWithinRange = price >= minPrice && price <= maxPrice
-
-    if (isAboveRange) 
+    if (!token1 || !token2 || !fee || !minPrice || !maxPrice || !currentPrice) 
     {
-        return isAmountValid(token2Amount) 
+        return false
     }
 
-    if (isBelowRange) 
+    const threshold = 1e-12
+    try 
     {
-        return isAmountValid(token1Amount) 
-    }
+        const resultAtoB = await computeTokenAmount(true, "0.0001", price)
+        const amountA = parseFloat(resultAtoB?.amountA ?? "0")
+        const amountB = parseFloat(resultAtoB?.amountB ?? "0")
 
-    if (isWithinRange) 
-    {
-        try 
+        if (amountA >= threshold && amountB < threshold) 
         {
-            const resultAtoB = await computeTokenAmount(true, "0.0001", price)
-            const resultBtoA = await computeTokenAmount(false, "0.0001", price)
-
-            const amountA_from_B = Number(resultBtoA.amountA)
-            const amountB_from_A = Number(resultAtoB.amountB)
-
-            const token1Disabled = amountA_from_B === 0
-            const token2Disabled = amountB_from_A === 0
-
-            if (token1Disabled && !token2Disabled) 
-            {
-                return isAmountValid(token2Amount)
-            } 
-            else if (!token1Disabled && token2Disabled) 
-            {
-                return isAmountValid(token1Amount)
-            } 
-            else 
-            {
-                return isAmountValid(token1Amount) && isAmountValid(token2Amount)
-            }
-        } 
-        catch (error) 
-        {
-            return false
+            return isAmountValid(token1Amount)
         }
-    }
 
-    return false 
+        if (amountB >= threshold && amountA < threshold) 
+        {
+            return isAmountValid(token1Amount)
+        }
+
+        if (amountA >= threshold && amountB >= threshold) 
+        {
+            return isAmountValid(token1Amount) || isAmountValid(token2Amount)
+        }
+
+        const resultBtoA = await computeTokenAmount(false, "0.0001", price)
+        const reverseA = parseFloat(resultBtoA?.amountA ?? "0")
+        const reverseB = parseFloat(resultBtoA?.amountB ?? "0")
+
+        if (reverseA >= threshold && reverseB < threshold) 
+        {
+            return isAmountValid(token2Amount)
+        }
+
+        if (reverseB >= threshold && reverseA < threshold) 
+        {
+            return isAmountValid(token2Amount)
+        }
+
+        if (reverseA >= threshold && reverseB >= threshold) 
+        {
+            return isAmountValid(token1Amount) || isAmountValid(token2Amount)
+        }
+
+        return false
+    } 
+    catch (error) 
+    {
+        console.log(error)
+        return false
+    }
 }
+
+
 
 
 
