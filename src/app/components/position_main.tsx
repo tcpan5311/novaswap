@@ -1,7 +1,11 @@
 "use client"
+import { useEffect, useState } from 'react'
+import { UseBlockchain } from '../context/blockchain_context'
 import { Button, Group, Box, Text, Flex, Card, Table } from '@mantine/core'
 import { IconPlus, IconComet } from '@tabler/icons-react'
 import { useRouter } from "next/navigation"
+import { ethers, isAddress } from 'ethers'
+import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 
 const pools = 
 [
@@ -12,8 +16,92 @@ const pools =
   { id: 5, pool: "MATIC/USDT", tvl: "$15M", apr: "18%", volume: "$1.5M" },
 ]
 
-export default function PositionMain() 
+type PositionData = 
 {
+  tokenId: bigint
+  pool: string
+  tickLower: number
+  tickUpper: number
+  liquidity: bigint
+  feeGrowthInside0LastX128: bigint
+  feeGrowthInside1LastX128: bigint
+  tokensOwed0: bigint
+  tokensOwed1: bigint
+}
+
+export function useDebounceEffect(callback: () => void, deps: any[], delay: number) 
+{
+    useEffect(() => 
+    {
+        const handler = setTimeout(() => 
+        {
+            callback()
+        }, delay)
+
+        return () => clearTimeout(handler)
+    }, [...deps, delay])
+}
+
+  export default function PositionMain() 
+  {
+    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
+
+    const loadPositions = async () => 
+    {
+      if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
+      {
+        const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract
+
+        const totalSupply: bigint = await uniswapV3NFTManagerContract.totalSupply()
+
+        const allPositions: PositionData[] = []
+
+        for (let tokenId = 0n; tokenId < totalSupply; tokenId++) 
+        {
+          try 
+          {
+            const pos = await uniswapV3NFTManagerContract.positions(tokenId)
+            const poolAddress = pos.pool
+
+            const poolContract = new ethers.Contract(poolAddress, UniswapV3Pool.abi, provider)
+
+            const key = ethers.keccak256
+            (
+              ethers.solidityPacked(["address", "int24", "int24"], [uniswapV3NFTManagerContract.target, pos.lowerTick, pos.upperTick])
+            )
+
+            const position = await poolContract.positions(key)
+
+            allPositions.push
+            ({
+              tokenId,
+              pool: poolAddress,
+              tickLower: Number(pos.lowerTick),
+              tickUpper: Number(pos.upperTick),
+              liquidity: position.liquidity,
+              feeGrowthInside0LastX128: position.feeGrowthInside0LastX128,
+              feeGrowthInside1LastX128: position.feeGrowthInside1LastX128,
+              tokensOwed0: position.tokensOwed0,
+              tokensOwed1: position.tokensOwed1
+            })
+          } 
+          catch (error) 
+          {
+            console.log(`Error on tokenId ${tokenId.toString()}:`, error)
+            continue
+          }
+        }
+
+        console.log("all positions:", allPositions)
+      }
+    }
+
+  useDebounceEffect(() => 
+  {
+    loadPositions()
+  }, [signer, contracts, deploymentAddresses], 500)
+
   const router = useRouter()
 
   const HandleNavigation = () => 
@@ -51,6 +139,7 @@ export default function PositionMain()
         </Table.Td>
       </Table.Tr>
   ))
+
 
   return (
       <Flex ml={200} mt={50} className="flex flex-col space-y-4 p-4 border-none rounded-lg shadow-md w-4/10 max-w-md ml-1/4">

@@ -10,6 +10,7 @@ import { ethers, isAddress } from 'ethers'
 import { useRouter } from 'next/navigation';
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
+import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
@@ -812,28 +813,6 @@ export default function PositionCreate()
         }
     }
 
-    const getPosition = async() =>
-    {
-        if (signer && deploymentAddresses && contracts) 
-        {
-            const poolExist = await doesPoolExist(selectedToken1?.Address ?? null, selectedToken2?.Address ?? null, fee ?? null)
-            if (poolExist) 
-            {
-                const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
-                console.log(poolAddressTest)
-
-                const tokenPosition = await uniswapV3NFTManagerContract?.positions(0)
-                const {pool, lowerTick, upperTick } = tokenPosition
-                const positionKey = ethers.keccak256(ethers.solidityPacked(["address", "int24", "int24"], [nftManagerContractAddress, lowerTick, upperTick]))
-                console.log(positionKey)
-                const poolCallContract = getPoolContract(pool) 
-                const position = await poolCallContract?.positions(positionKey)
-                console.log("Position:", position)
-            }
-        }
-    }
-
-
     const getTwapPrice = async (secondsAgo: number) => 
     {
         const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
@@ -919,7 +898,7 @@ export default function PositionCreate()
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={() => getTwapPrice(60)}
+            onClick={() => quotePool()}
             >
             Test initial
             </Button>
