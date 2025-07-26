@@ -109,6 +109,34 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
       router.push("/position_main/position_create")
   }
 
+const removeLiquidity = async () => 
+{
+  if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
+  {
+    try 
+    {
+      const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract
+      const tokenId = 0n
+      const liquidityToRemove = BigInt("1566553709122544960774") / 4n
+
+      const tx = await uniswapV3NFTManagerContract.removeLiquidity
+      ({
+        tokenId,
+        liquidity: liquidityToRemove,
+      })
+
+      console.log("Transaction sent, waiting for confirmation...")      
+      const receipt = await tx.wait()
+      console.log(receipt)
+    } 
+    catch (error) 
+    {
+      console.log(error)
+    }
+  } 
+}
+
+
   const rows = pools.map((pool) => 
   (
       <Table.Tr key={pool.id}>
@@ -142,7 +170,16 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 
 
   return (
+
       <Flex ml={200} mt={50} className="flex flex-col space-y-4 p-4 border-none rounded-lg shadow-md w-4/10 max-w-md ml-1/4">
+      <Button
+      fullWidth
+      radius="md"
+      className="mt-[5%]"
+      onClick={() => removeLiquidity()}
+      >
+      Remove liquidity
+      </Button>
       
       <Box className="flex flex-wrap bg-gray-100 p-4 rounded-lg">
         <Text size="xl" fw={750} c="#4f0099" mt={10}>

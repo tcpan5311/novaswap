@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select} from '@mantine/core'
+import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select, Badge} from '@mantine/core'
 // import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
 import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage, IconChevronUp, IconTagPlus } from '@tabler/icons-react'
@@ -58,7 +58,7 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
 
 const getCanonicalOrder = (tokenA: CryptocurrencyDetail, tokenB: CryptocurrencyDetail) => 
 {
-    const token1First = tokenA.Label.toLowerCase() < tokenB.Label.toLowerCase()
+    const token1First = tokenA.Address.toLowerCase() < tokenB.Address.toLowerCase()
 
     return token1First ? 
     {
@@ -170,6 +170,8 @@ export default function PositionCreate()
 
     const [lastEditedField, setLastEditedField] = useState<"token1" | "token2" | null>(null)
     const [loading, setLoading] = useState(false)
+
+    const [tokenSelection, setTokenSelection] = useState({displayToken1Name: '', displayToken2Name: '', displayFee: 0})
 
     useDebounceEffect(() => 
     {
@@ -328,7 +330,7 @@ export default function PositionCreate()
 
     const handleStepClick = (step: number) => 
     {
-        processStepClick(step, highestStepVisited, setStepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
+        processStepClick(step, highestStepVisited, setStepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount, updateTokenSelection)
     }
 
     const shouldAllowSelectStep = (step: number) => 
@@ -352,32 +354,54 @@ export default function PositionCreate()
         setMinPriceInput, 
         setMaxPriceInput,
         setToken1Amount, 
-        setToken2Amount
+        setToken2Amount,
+        updateTokenSelection
     )
 
     const handleBack = () => processStepChange(
-    'back', 
-    stepActive, 
-    setStepActive, 
-    setHighestStepVisited,
-    getCurrentPoolPrice, 
-    setSelectedToken1, 
-    setSelectedToken2,
-    setFee, 
-    setInitialPrice, 
-    setInitialPriceInput,
-    setMinPrice, 
-    setMaxPrice, 
-    setMinPriceInput, 
-    setMaxPriceInput,
-    setToken1Amount, 
-    setToken2Amount
+        'back', 
+        stepActive, 
+        setStepActive, 
+        setHighestStepVisited,
+        getCurrentPoolPrice, 
+        setSelectedToken1, 
+        setSelectedToken2,
+        setFee, 
+        setInitialPrice, 
+        setInitialPriceInput,
+        setMinPrice, 
+        setMaxPrice, 
+        setMinPriceInput, 
+        setMaxPriceInput,
+        setToken1Amount, 
+        setToken2Amount,
+        updateTokenSelection
     )
 
-    // const handleStepChange = (nextStep: number) => 
-    // {
-    //     processStepChange(nextStep, stepActive, setStepActive, setHighestStepVisited, getCurrentPoolPrice, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount)
-    // }
+    const updateTokenSelection = (shouldSet = true) => 
+    {
+        if (!selectedToken1 || !selectedToken2 || !fee) return
+
+        if (shouldSet) 
+        {
+            const { token1, token2 } = getCanonicalOrder(selectedToken1, selectedToken2)
+            setTokenSelection
+            ({
+                displayToken1Name: token1.Label,
+                displayToken2Name: token2.Label,
+                displayFee: fee
+            })
+        } 
+        else 
+        {
+            setTokenSelection
+            ({
+                displayToken1Name: '',
+                displayToken2Name: '',
+                displayFee: 0
+            })
+        }
+    }
 
     //Toggle visibility of set fee component
     const [isVisible, setIsVisible] = useState(true)
@@ -387,7 +411,7 @@ export default function PositionCreate()
         setIsVisible((prev) => !prev)
     }
     
-    const validatePriceInput = (input: string, maxDecimalsForOneOrMore = 4): number | null => 
+    const validatePriceInput = (input: string, maxDecimalsForOneOrMore = 18): number | null => 
     {
         input = input.trim()
 
@@ -612,8 +636,8 @@ export default function PositionCreate()
             }
 
             return {
-                amountA: amountTokenA.toSignificant(4),
-                amountB: amountTokenB.toSignificant(4)
+                amountA: amountTokenA.toFixed(18),
+                amountB: amountTokenB.toFixed(18)
             }
         }
         catch (error)
@@ -948,6 +972,7 @@ export default function PositionCreate()
                 {stepActive === 1 && 
                 (
                     <Grid.Col span={{ base: 10, md: 10, lg: 5 }}>
+
                         <Card shadow="sm" padding="lg" radius="md" withBorder>
                             <Text size="lg" fw={600} c="#4f0099">Select Pair</Text>
                             <Text mt={10} size="sm" c="gray"> Choose the tokens you want to provide liquidity for.</Text>
@@ -1086,7 +1111,7 @@ export default function PositionCreate()
                                         {
                                             setInitialPriceInput(input)
 
-                                            const parsedInput = validatePriceInput(input, 4)
+                                            const parsedInput = validatePriceInput(input, 18)
                                             if (parsedInput !== null) 
                                             {
                                                 setInitialPrice(parsedInput)
@@ -1132,6 +1157,21 @@ export default function PositionCreate()
                 (
                     <Grid.Col span={{ base: 10, md: 10, lg: 5 }}>
                         <Box>
+                            <Card shadow="sm" padding="lg" radius="md" mt={10} withBorder>
+                                <Group align="center">
+                                    <ActionIcon radius="xl">
+                                    <IconCoinFilled size={40} />
+                                    </ActionIcon>
+                                    <Text>
+                                    {tokenSelection.displayToken1Name} / {tokenSelection.displayToken2Name}
+                                    </Text>
+
+                                    <Badge color="purple">
+                                        <Text>{tokenSelection.displayFee}</Text>
+                                    </Badge>
+                                </Group>
+                            </Card>
+
                             <Card shadow="sm" padding="lg" radius="md" mt={10} withBorder>
                             <Text size="lg" fw={600} c="#4f0099" mb={20}>Set price range</Text>
                             <Tabs color="grape" variant="pills" radius="xl" defaultValue="custom_range" c="#4f0099">
@@ -1190,7 +1230,7 @@ export default function PositionCreate()
                                                                 fontSize='11px'
                                                                 fontWeight="bold"
                                                                 >
-                                                                {`Min: ${minPrice.toFixed(2)}`}
+                                                                {`Min: ${minPrice.toPrecision(8)}`}
                                                                 </text>
                                                             </g>
                                                         )}
@@ -1220,7 +1260,7 @@ export default function PositionCreate()
                                                                 fill='purple'
                                                                 fontWeight="bold"
                                                                 >
-                                                                {`Max: ${maxPrice.toFixed(2)}`}
+                                                                {`Max: ${maxPrice.toPrecision(8)}`}
                                                                 </text>
                                                             </g>
                                                         )}
@@ -1258,7 +1298,7 @@ export default function PositionCreate()
                                                                 {
                                                                     setMinPriceInput(input)
 
-                                                                    const parsedInput = validatePriceInput(input, 4)
+                                                                    const parsedInput = validatePriceInput(input, 18)
                                                                     if (parsedInput !== null) 
                                                                     {
                                                                         setMinPrice(parsedInput)
@@ -1307,7 +1347,7 @@ export default function PositionCreate()
                                                                 {
                                                                     setMaxPriceInput(input)
 
-                                                                    const parsedInput = validatePriceInput(input, 4)
+                                                                    const parsedInput = validatePriceInput(input, 18)
                                                                     if (parsedInput !== null) 
                                                                     {
                                                                         setMaxPrice(parsedInput)
@@ -1336,7 +1376,6 @@ export default function PositionCreate()
                                         
                                         {!hideToken1DuringChange && (
                                             <>
-                                                <h4>Token 1</h4>
                                                 <Input
                                                 mt={20}
                                                 size="xl"
@@ -1351,12 +1390,18 @@ export default function PositionCreate()
                                                         setLastEditedField("token1")
                                                     }
                                                 }}
-                                                rightSection={
-                                                    <ActionIcon radius="xl">
-                                                    <IconCoinFilled size={40} />
-                                                    </ActionIcon>
+                                                rightSection=
+                                                {
+                                                    <Group align="center">
+                                                        <Text>
+                                                        {tokenSelection.displayToken1Name} 
+                                                        </Text>
+                                                        <ActionIcon radius="xl">
+                                                        <IconCoinFilled size={40} />
+                                                        </ActionIcon>
+                                                    </Group>
                                                 }
-                                                rightSectionWidth={100}
+                                                rightSectionWidth={200}
                                                 />
                                             </>
 
@@ -1364,7 +1409,6 @@ export default function PositionCreate()
 
                                         {!hideToken2DuringChange && (
                                             <>
-                                                <h4>Token 2</h4>
                                                 <Input
                                                 mt={20}
                                                 size="xl"
@@ -1379,12 +1423,18 @@ export default function PositionCreate()
                                                         setLastEditedField("token2")
                                                     }
                                                 }}
-                                                rightSection={
-                                                    <ActionIcon radius="xl">
-                                                    <IconCoinFilled size={40} />
-                                                    </ActionIcon>
+                                                rightSection=
+                                                {
+                                                    <Group align="center">
+                                                        <Text>
+                                                        {tokenSelection.displayToken2Name} 
+                                                        </Text>
+                                                        <ActionIcon radius="xl">
+                                                        <IconCoinFilled size={40} />
+                                                        </ActionIcon>
+                                                    </Group>
                                                 }
-                                                rightSectionWidth={100}
+                                                rightSectionWidth={200}
                                             />
                                             </>
 

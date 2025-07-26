@@ -24,7 +24,7 @@ export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefO
     }
 
     setMinPrice(newMinPrice)
-    setMinPriceInput(newMinPrice.toFixed(4))
+    setMinPriceInput(newMinPrice.toFixed(18))
 }
 
 export const handleMaxPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, minPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMaxPrice: (price: number) => void, setMaxPriceInput: (input: string) => void) => 
@@ -50,7 +50,7 @@ export const handleMaxPriceMove = async (event: MouseEvent, chartRef: React.RefO
     }
 
     setMaxPrice(newMaxPrice)
-    setMaxPriceInput(newMaxPrice.toFixed(4))
+    setMaxPriceInput(newMaxPrice.toFixed(18))
 }
 
 

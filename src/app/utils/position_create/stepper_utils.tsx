@@ -27,7 +27,8 @@ export const processStepClick = (
     setMinPriceInput: (val: string) => void,
     setMaxPriceInput: (val: string) => void,
     setToken1Amount: (val: string) => void,
-    setToken2Amount: (val: string) => void) => 
+    setToken2Amount: (val: string) => void,
+    updateTokenSelection: (shouldSet: boolean) => void) => 
     {
         if (!shouldAllowStep(step, highestStepVisited)) return
 
@@ -53,6 +54,7 @@ export const processStepClick = (
                 setMaxPriceInput("")
                 setToken1Amount("")
                 setToken2Amount("")
+                updateTokenSelection(false)
             }
             setStepActive(step + 1)
         }
@@ -74,44 +76,47 @@ export const processStepClick = (
         setMinPriceInput: (val: string) => void,
         setMaxPriceInput: (val: string) => void,
         setToken1Amount: (val: string) => void,
-        setToken2Amount: (val: string) => void
-    ) => {
-        const delta = direction === 'next' ? 1 : -1
-        const nextStep = stepActive + delta
-
-        const isOutOfBounds = nextStep < 0 || nextStep > 2
-        if (isOutOfBounds) return
-
-        let currentPrice = 0
-
-        if (direction === 'back') 
+        setToken2Amount: (val: string) => void,
+        updateTokenSelection: (shouldSet: boolean) => void) => 
         {
-            setSelectedToken1(null)
-            setSelectedToken2(null)
-            setFee(null)
-            setInitialPrice(0)
-            setInitialPriceInput("")
-            setMinPrice(0)
-            setMaxPrice(0)
-            setMinPriceInput("")
-            setMaxPriceInput("")
-            setToken1Amount("")
-            setToken2Amount("")
+            const delta = direction === 'next' ? 1 : -1
+            const nextStep = stepActive + delta
+
+            const isOutOfBounds = nextStep < 0 || nextStep > 2
+            if (isOutOfBounds) return
+
+            let currentPrice = 0
+
+            if (direction === 'back') 
+            {
+                setSelectedToken1(null)
+                setSelectedToken2(null)
+                setFee(null)
+                setInitialPrice(0)
+                setInitialPriceInput("")
+                setMinPrice(0)
+                setMaxPrice(0)
+                setMinPriceInput("")
+                setMaxPriceInput("")
+                setToken1Amount("")
+                setToken2Amount("")
+                updateTokenSelection(false)
+            }
+
+            setStepActive(nextStep)
+            setHighestStepVisited(prev => Math.max(prev, nextStep))
+
+            currentPrice = await getCurrentPoolPrice() ?? 0
+
+            const minPrice = Math.floor(currentPrice * 0.85)
+            const maxPrice = Math.ceil(currentPrice * 1.15)
+
+            updateTokenSelection(true)
+            setMinPrice(minPrice)
+            setMaxPrice(maxPrice)
+            setMinPriceInput(minPrice.toString())
+            setMaxPriceInput(maxPrice.toString())
         }
-
-        setStepActive(nextStep)
-        setHighestStepVisited(prev => Math.max(prev, nextStep))
-
-        currentPrice = await getCurrentPoolPrice() ?? 0
-
-        const minPrice = Math.floor(currentPrice * 0.85)
-        const maxPrice = Math.ceil(currentPrice * 1.15)
-
-        setMinPrice(minPrice)
-        setMaxPrice(maxPrice)
-        setMinPriceInput(minPrice.toString())
-        setMaxPriceInput(maxPrice.toString())
-    }
 
 
 // export const processStepChange = async (
