@@ -461,16 +461,24 @@ export default function PositionCreate()
     //Helper functions
     const priceToSqrtPBigNumber = (price: number): bigint => 
     {
-        const jsbi = encodeSqrtRatioX96(JSBI.BigInt(price), JSBI.BigInt(1))
-        return BigInt(jsbi.toString()) 
+        const DECIMALS = 18
+        const SCALE = 10 ** DECIMALS
+
+        const numerator = JSBI.BigInt(Math.round(price * SCALE))
+        const denominator = JSBI.BigInt(SCALE)
+
+        const jsbi = encodeSqrtRatioX96(numerator, denominator)
+        return BigInt(jsbi.toString())
     }
 
     const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
     {
-        const jsbiSqrt = JSBI.BigInt(sqrtPriceX96.toString())
-        const shift = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
-        const ratio = JSBI.toNumber(JSBI.divide(jsbiSqrt, shift))
-        return ratio ** 2
+        const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
+        const sqrtPriceJSBI = JSBI.BigInt(sqrtPriceX96.toString())
+
+        const sqrtPrice = JSBI.toNumber(sqrtPriceJSBI) / JSBI.toNumber(Q96)
+
+        return sqrtPrice * sqrtPrice
     }
 
     const priceToSqrtP = (price: number) => 
