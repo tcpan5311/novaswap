@@ -17,6 +17,7 @@ import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, h
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
 
+
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
 const feeStructure = 
