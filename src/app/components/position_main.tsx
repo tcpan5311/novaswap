@@ -9,7 +9,6 @@ import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
-import { UseSelectedPosition } from '../context/selected_position_context'
 import JSBI from 'jsbi'
 
 const pools = 
@@ -72,7 +71,6 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
   export default function PositionMain() 
   {
     const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
-    const { setSelectedPosition } = UseSelectedPosition()
     const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
     const [positions, setPositions] = useState<PositionData[]>([])
     const [query, setQuery] = useState('')
@@ -342,8 +340,7 @@ const removeLiquidity = async () =>
                   key={position.tokenId.toString()}
                   onClick={() => 
                   {
-                    setSelectedPosition(position)
-                    router.push("/position_main/position_details")
+                    router.push(`/position_main/position_details?tokenId=${position.tokenId.toString()}`)
                   }}
                   data-list-item
                   display="block"

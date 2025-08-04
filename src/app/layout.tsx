@@ -6,7 +6,6 @@ import '@mantine/charts/styles.css'
 import {MantineProvider, createTheme, ColorSchemeScript, mantineHtmlProps } from '@mantine/core'
 import Header from "./components/header"
 import { BlockchainProvider } from './context/blockchain_context'
-import { SelectedPositionProvider } from "./context/selected_position_context"
 
 const theme = createTheme
 ({
@@ -49,10 +48,8 @@ export default function RootLayout({
       <body>
         <MantineProvider theme={theme}>
           <BlockchainProvider>
-            <SelectedPositionProvider>
             <Header/>
             {children}
-            </SelectedPositionProvider>
           </BlockchainProvider>
         </MantineProvider>
       </body>
