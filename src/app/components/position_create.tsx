@@ -7,7 +7,7 @@ import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconP
 import { useDisclosure } from '@mantine/hooks'
 import JSBI from 'jsbi'
 import { ethers, isAddress } from 'ethers'
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
 import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'

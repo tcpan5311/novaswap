@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect } from 'react'
-import { Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Badge, ScrollArea, ActionIcon, Divider, Modal } from '@mantine/core'
+import { Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
@@ -9,8 +9,9 @@ import { ethers, isAddress } from 'ethers'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import { useSearchParams } from 'next/navigation'
-import { IconCoinFilled } from '@tabler/icons-react'
+import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
+import { useRouter } from 'next/navigation'
 
 type PositionData = 
 {
@@ -76,9 +77,11 @@ export default function PositionDetails()
     const searchParams = useSearchParams()
     const [tokenId, setTokenId] = useState<bigint | null>(null)
     const [opened1, { open: open1, close: close1 }] = useDisclosure(false)
+    const [opened2, { open: open2, close: close2 }] = useDisclosure(false)
 
     const [percent, setPercent] = useState<number | null>(null)
     const [percentInput, setPercentInput] = useState<string>('')
+    const router = useRouter()
 
     const validatePercentInput = (input: string): number | null => 
     {
@@ -271,6 +274,21 @@ export default function PositionDetails()
             {selectedPosition && (
             <>
                 <Flex className="flex flex-col space-y-4 p-4 border-none rounded-lg shadow-md mx-auto mt-12 w-full sm:w-[90%] md:w-[70%] lg:w-[50%] xl:w-[40%]">
+
+                    <Box className="flex flex-wrap p-4"mt={15} ml={15}>
+                        <Text
+                        key="positions"
+                        className="cursor-pointer flex items-center gap-4"
+                        size="lg"
+                        fw={750}
+                        c="#4f0099"
+                        onClick={() => router.push('/position_main')}
+                        >
+                        <IconArrowLeft size={20} />
+                        Your positions
+                        </Text>
+                    </Box>
+
                     <Card>
                         <div className="flex flex-wrap items-center w-full gap-y-4">
                             <Box mt={10} mb={{ base: 2, sm: 0 }} mr="auto" className="flex items-center space-x-2">
@@ -288,10 +306,10 @@ export default function PositionDetails()
                             </Box>
 
                             <Box mt={10} className="sm:mt-5 md:mt-5">
-                                <Button radius="md" size="sm">
+                                <Button radius="md" size="sm" onClick={() => open1()}>
                                     Add liquidity
                                 </Button>
-                                <Button radius="md" size="sm" ml={10} onClick={() => open1()}>
+                                <Button radius="md" size="sm" ml={10} onClick={() => open2()}>
                                     Remove liquidity
                                 </Button>
                             </Box>
@@ -303,6 +321,94 @@ export default function PositionDetails()
                 <Modal
                 opened={opened1}
                 onClose={close1}
+                title={<Text fw={750} c="#4f0099">Add liquidity</Text>}
+                closeOnClickOutside={false}
+                closeOnEscape={false}
+                size="md"
+                centered
+                >
+                    <Box mt={10} mb={{ base: 2, sm: 0 }} mr="auto" className="flex items-center space-x-2">
+                        <ActionIcon radius="xl">
+                            <IconCoinFilled size={40} />
+                        </ActionIcon>
+
+                        <Text ml={10} className="whitespace-nowrap">
+                            {selectedPosition.token0} / {selectedPosition.token1}
+                        </Text>
+
+                        <Badge color="purple" ml={10}>
+                            <Text>{selectedPosition.fee}</Text>
+                        </Badge>
+                    </Box>
+
+                    <Input
+                    mt={20}
+                    size="xl"
+                    placeholder="0"
+                    rightSection=
+                    {
+                        <Group align="center">
+                            <Text>
+                            {selectedPosition.token0} 
+                            </Text>
+                            <ActionIcon radius="xl">
+                            <IconCoinFilled size={40} />
+                            </ActionIcon>
+                        </Group>
+                    }
+                    rightSectionWidth={100}
+                    />
+
+                    <Input
+                    mt={20}
+                    size="xl"
+                    placeholder="0"
+                    rightSection=
+                    {
+                        <Group align="center">
+                            <Text>
+                            {selectedPosition.token1} 
+                            </Text>
+                            <ActionIcon radius="xl">
+                            <IconCoinFilled size={40} />
+                            </ActionIcon>
+                        </Group>
+                    }
+                    rightSectionWidth={100}
+                    />
+
+                    <Box mt={10}>
+                        <Group justify="space-between">
+                            <Text fw={700} size="md"  c="purple">
+                            {selectedPosition.token0}
+                            </Text>
+                            <Text fw={700} size="md"  c="purple">
+                            {selectedPosition.token0Amount0}
+                            </Text>
+                        </Group>
+
+                        <Group justify="space-between">
+                            <Text fw={700} size="md"  c="purple">
+                            {selectedPosition.token1}
+                            </Text>
+                            <Text fw={700} size="md"  c="purple">
+                            {selectedPosition.token1Amount1}
+                            </Text>
+                        </Group>
+                    </Box>
+
+                    <Button
+                    fullWidth
+                    radius="md"
+                    className="mt-[5%]">
+                    Add liquidity
+                    </Button>
+
+                </Modal>
+
+                <Modal
+                opened={opened2}
+                onClose={close2}
                 title={<Text fw={750} c="#4f0099">Remove liquidity</Text>}
                 closeOnClickOutside={false}
                 closeOnEscape={false}
@@ -435,6 +541,8 @@ export default function PositionDetails()
                     </Button>
 
                 </Modal>
+
+
             </>
             // <>
             // <h1 className="text-xl font-bold mb-2">
