@@ -12,10 +12,13 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
+import {roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/position_details/compute_token_utils'
 
 type PositionData = 
 {
   tokenId: bigint
+  token0Address: string
+  token1Address: string
   token0: string
   token1: string
   fee: number
@@ -57,6 +60,24 @@ const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number =>
     return sqrtPrice * sqrtPrice
 }
 
+const validatePercentInput = (input: string): number | null => 
+{
+    input = input.trim()
+
+    if (input === "") return null
+
+    let parsed = parseInt(input, 10)
+
+    if (isNaN(parsed)) return null
+
+    if (parsed > 100 || parsed === 0) 
+    {
+        return 1
+    }
+
+    return parsed
+}
+
 export function useDebounceEffect(callback: () => void, deps: any[], delay: number) 
 {
     useEffect(() => 
@@ -73,119 +94,127 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionDetails() 
 {
     const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+    const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
+
     const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null)
     const searchParams = useSearchParams()
     const [tokenId, setTokenId] = useState<bigint | null>(null)
-    const [opened1, { open: open1, close: close1 }] = useDisclosure(false)
+    const [opened1, { open: originalOpen1, close: originalClose1 }] = useDisclosure(false)
     const [opened2, { open: open2, close: close2 }] = useDisclosure(false)
 
     const [percent, setPercent] = useState<number | null>(null)
     const [percentInput, setPercentInput] = useState<string>('')
     const router = useRouter()
 
-    const validatePercentInput = (input: string): number | null => 
+    const [token0Amount, setToken0Amount] = useState<string>('')
+    const [token1Amount, setToken1Amount] = useState<string>('')
+    
+    const [lastEditedField, setLastEditedField] = useState<"token0" | "token1" | null>(null)
+
+    const [hideToken0DuringChange, setHideToken0DuringChange] = useState(false)
+    const [hideToken1DuringChange, setHideToken1DuringChange] = useState(false)
+
+    const open1 = () => 
     {
-        input = input.trim()
+        originalOpen1()
+        runAllUpdates()
+    }
 
-        if (input === "") return null
-
-        let parsed = parseInt(input, 10)
-
-        if (isNaN(parsed)) return null
-
-        if (parsed > 100 || parsed === 0) 
-        {
-            return 1
-        }
-
-        return parsed
+    const close1 = () => 
+    {
+        originalClose1()
+        setToken0Amount("")
+        setToken1Amount("")
     }
 
     const loadPositionDetails = async (position_id: bigint) => 
     {
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
         {
+            setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
             const manager = contracts.UniswapV3NFTManagerContract
             const address = await signer.getAddress()
 
             try 
             {
-            const owner = await manager.ownerOf(position_id)
-            if (owner.toLowerCase() !== address.toLowerCase()) return null
+                const owner = await manager.ownerOf(position_id)
+                if (owner.toLowerCase() !== address.toLowerCase()) return null
 
-            const extracted = await manager.positions(position_id)
-            const poolAddress = extracted.pool
+                const extracted = await manager.positions(position_id)
+                const poolAddress = extracted.pool
 
-            const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-            const [token0Address, token1Address, feeRaw] = await Promise.all
-            ([
-                pool.token0(),
-                pool.token1(),
-                pool.fee()
-            ])
-            const fee = Number(feeRaw)
+                const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
+                const [token0Address, token1Address, feeRaw] = await Promise.all
+                ([
+                    pool.token0(),
+                    pool.token1(),
+                    pool.fee()
+                ])
+                const fee = Number(feeRaw)
 
-            const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-            const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-            const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
-            ([
-                token0Contract.symbol(),
-                token1Contract.symbol(),
-                token0Contract.decimals(),
-                token1Contract.decimals()
-            ])
+                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+                const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
+                ([
+                    token0Contract.symbol(),
+                    token1Contract.symbol(),
+                    token0Contract.decimals(),
+                    token1Contract.decimals()
+                ])
 
-            const slot0 = await pool.slot0()
-            const tick = Number(slot0.tick)
-            const sqrtPriceX96 = slot0.sqrtPriceX96
-            const price = sqrtPToPriceNumber(sqrtPriceX96)
+                const slot0 = await pool.slot0()
+                const tick = Number(slot0.tick)
+                const sqrtPriceX96 = slot0.sqrtPriceX96
+                const price = sqrtPToPriceNumber(sqrtPriceX96)
 
-            const positionKey = ethers.keccak256
-            (
-                ethers.solidityPacked(
-                ['address', 'int24', 'int24'],
-                [manager.target, extracted.lowerTick, extracted.upperTick]
+                const positionKey = ethers.keccak256
+                (
+                    ethers.solidityPacked(
+                    ['address', 'int24', 'int24'],
+                    [manager.target, extracted.lowerTick, extracted.upperTick]
+                    )
                 )
-            )
 
-            const positionOnPool = await pool.positions(positionKey)
-            const liquidity = positionOnPool.liquidity.toString()
+                const positionOnPool = await pool.positions(positionKey)
+                const liquidity = positionOnPool.liquidity.toString()
 
-            const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
-            const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
+                const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
+                const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
 
-            const poolSdk = new Pool(token0, token1, fee, sqrtPriceX96.toString(), liquidity, tick)
+                const poolSdk = new Pool(token0, token1, fee, sqrtPriceX96.toString(), liquidity, tick)
 
-            const positionEntity = new Position
-            ({
-                pool: poolSdk,
-                liquidity: liquidity,
-                tickLower: Number(extracted.lowerTick),
-                tickUpper: Number(extracted.upperTick)
-            })
+                const positionEntity = new Position
+                ({
+                    pool: poolSdk,
+                    liquidity: liquidity,
+                    tickLower: Number(extracted.lowerTick),
+                    tickUpper: Number(extracted.upperTick)
+                })
 
-            const amount0 = positionEntity.amount0.toFixed()
-            const amount1 = positionEntity.amount1.toFixed()
+                const amount0 = positionEntity.amount0.toFixed()
+                const amount1 = positionEntity.amount1.toFixed()
 
-            const positionData: PositionData = 
-            {
-                tokenId: position_id,
-                token0: symbol0,
-                token1: symbol1,
-                fee: fee,
-                pool: poolAddress,
-                tickLower: Number(extracted.lowerTick),
-                tickUpper: Number(extracted.upperTick),
-                currentTick: tick,
-                currentPrice: price,
-                liquidity: positionOnPool.liquidity,
-                feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
-                feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
-                tokensOwed0: positionOnPool.tokensOwed0,
-                tokensOwed1: positionOnPool.tokensOwed1,
-                token0Amount0: amount0,
-                token1Amount1: amount1
-            }
+                const positionData: PositionData = 
+                {
+                    tokenId: position_id,
+                    token0Address: token0Address,
+                    token1Address: token1Address,
+                    token0: symbol0,
+                    token1: symbol1,
+                    fee: fee,
+                    pool: poolAddress,
+                    tickLower: Number(extracted.lowerTick),
+                    tickUpper: Number(extracted.upperTick),
+                    currentTick: tick,
+                    currentPrice: price,
+                    liquidity: positionOnPool.liquidity,
+                    feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
+                    feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
+                    tokensOwed0: positionOnPool.tokensOwed0,
+                    tokensOwed1: positionOnPool.tokensOwed1,
+                    token0Amount0: amount0,
+                    token1Amount1: amount1
+                }
 
                 console.log('single position:', positionData)
                 return positionData
@@ -204,6 +233,85 @@ export default function PositionDetails()
         const data = await loadPositionDetails(tokenId ?? 0n)
         console.log(data)
         if (data) setSelectedPosition(data)
+    }
+
+    const runAllUpdates = async () => 
+    {
+        const hasSelectedPosition = selectedPosition != null
+        const hasToken0 = selectedPosition?.token0Address != null && selectedPosition.token0Address !== ""
+        const hasToken1 = selectedPosition?.token1Address != null && selectedPosition.token1Address !== ""
+        const hasFee = selectedPosition?.fee != null
+        const hasCurrentPoolPrice = selectedPosition?.currentPrice != null
+
+        if (!provider || !signer || !deploymentAddresses || !hasSelectedPosition || !hasToken0 || !hasToken1 || !hasFee || !hasCurrentPoolPrice) 
+        {
+            return
+        }
+
+        await handleTokenInputDisplay
+        (
+            selectedPosition.token0Address,  
+            selectedPosition.token1Address, 
+            selectedPosition.fee,
+            tickToPrice(selectedPosition.tickLower),
+            tickToPrice(selectedPosition.tickUpper),
+            selectedPosition.currentPrice,
+            computeTokenAmount,
+            setHideToken0DuringChange,
+            setHideToken1DuringChange,
+            provider,
+            signer,
+            uniswapV3FactoryContract,
+            getPoolContract
+        )
+        
+        if (lastEditedField === "token0") 
+        {
+            await updateTokenAmounts(
+            true,
+            token0Amount,
+            selectedPosition.token0Address,
+            selectedPosition.token1Address,
+            selectedPosition.fee,
+            tickToPrice(selectedPosition.tickLower),
+            tickToPrice(selectedPosition.tickUpper),
+            selectedPosition.currentPrice,
+            computeTokenAmount,
+            setToken0Amount,
+            setToken1Amount,
+            lastEditedField,
+            token0Amount,
+            token1Amount,
+            provider,
+            signer,
+            uniswapV3FactoryContract,
+            getPoolContract
+            )
+        }
+        if (lastEditedField === "token1") 
+        {
+            await updateTokenAmounts
+            (
+                false,
+                token1Amount,
+                selectedPosition.token0Address,
+                selectedPosition.token1Address,
+                selectedPosition.fee,
+                tickToPrice(selectedPosition.tickLower),
+                tickToPrice(selectedPosition.tickUpper),
+                selectedPosition.currentPrice,
+                computeTokenAmount,
+                setToken0Amount,
+                setToken1Amount,
+                lastEditedField,
+                token0Amount,
+                token1Amount,
+                provider,
+                signer,
+                uniswapV3FactoryContract,
+                getPoolContract
+            )
+        }
     }
 
     useEffect(() => 
@@ -226,6 +334,15 @@ export default function PositionDetails()
         fetchPosition()
     }, [tokenId, signer, contracts, deploymentAddresses], 500)
 
+    useDebounceEffect(() => 
+    {
+        runAllUpdates()
+    }, [signer, contracts, deploymentAddresses, token0Amount, token1Amount, lastEditedField], 500)
+
+    const addLiquidity = async () =>
+    {
+        console.log("Hello world")
+    }
 
     const removeLiquidity = async () => 
     {
@@ -341,41 +458,65 @@ export default function PositionDetails()
                         </Badge>
                     </Box>
 
-                    <Input
-                    mt={20}
-                    size="xl"
-                    placeholder="0"
-                    rightSection=
-                    {
-                        <Group align="center">
-                            <Text>
-                            {selectedPosition.token0} 
-                            </Text>
-                            <ActionIcon radius="xl">
-                            <IconCoinFilled size={40} />
-                            </ActionIcon>
-                        </Group>
-                    }
-                    rightSectionWidth={100}
-                    />
+                    {!hideToken0DuringChange && (
+                        <Input
+                        mt={20}
+                        size="xl"
+                        placeholder="0"
+                        value={token0Amount}
+                        onChange={async (event) => 
+                        {
+                            const input = event.currentTarget.value
+                            if (/^\d*\.?\d*$/.test(input)) 
+                            {
+                                setToken0Amount(input)
+                                setLastEditedField("token0")
+                            }
+                        }}
+                        rightSection=
+                        {
+                            <Group align="center">
+                                <Text>
+                                {selectedPosition.token0} 
+                                </Text>
+                                <ActionIcon radius="xl">
+                                <IconCoinFilled size={40} />
+                                </ActionIcon>
+                            </Group>
+                        }
+                        rightSectionWidth={100}
+                        />
+                    )}
 
-                    <Input
-                    mt={20}
-                    size="xl"
-                    placeholder="0"
-                    rightSection=
-                    {
-                        <Group align="center">
-                            <Text>
-                            {selectedPosition.token1} 
-                            </Text>
-                            <ActionIcon radius="xl">
-                            <IconCoinFilled size={40} />
-                            </ActionIcon>
-                        </Group>
-                    }
-                    rightSectionWidth={100}
-                    />
+                    {!hideToken1DuringChange && (
+                        <Input
+                        mt={20}
+                        size="xl"
+                        placeholder="0"
+                        value={token1Amount}
+                        onChange={async (event) => 
+                        {
+                            const input = event.currentTarget.value;
+                            if (/^\d*\.?\d*$/.test(input)) 
+                            {
+                                setToken1Amount(input)
+                                setLastEditedField("token1")
+                            }
+                        }}
+                        rightSection=
+                        {
+                            <Group align="center">
+                                <Text>
+                                {selectedPosition.token1} 
+                                </Text>
+                                <ActionIcon radius="xl">
+                                <IconCoinFilled size={40} />
+                                </ActionIcon>
+                            </Group>
+                        }
+                        rightSectionWidth={100}
+                        />
+                    )}
 
                     <Box mt={10}>
                         <Group justify="space-between">
@@ -383,7 +524,7 @@ export default function PositionDetails()
                             {selectedPosition.token0}
                             </Text>
                             <Text fw={700} size="md"  c="purple">
-                            {selectedPosition.token0Amount0}
+                            {roundIfCloseToWhole(selectedPosition.token0Amount0)}
                             </Text>
                         </Group>
 
@@ -392,7 +533,7 @@ export default function PositionDetails()
                             {selectedPosition.token1}
                             </Text>
                             <Text fw={700} size="md"  c="purple">
-                            {selectedPosition.token1Amount1}
+                            {roundIfCloseToWhole(selectedPosition.token1Amount1)}
                             </Text>
                         </Group>
                     </Box>
@@ -400,7 +541,8 @@ export default function PositionDetails()
                     <Button
                     fullWidth
                     radius="md"
-                    className="mt-[5%]">
+                    className="mt-[5%]"
+                    onClick={addLiquidity}>
                     Add liquidity
                     </Button>
 
@@ -518,7 +660,7 @@ export default function PositionDetails()
                         {selectedPosition.token0}
                         </Text>
                         <Text fw={700} size="md"  c="purple">
-                        {selectedPosition.token0Amount0}
+                        {roundIfCloseToWhole(selectedPosition.token0Amount0)}
                         </Text>
                     </Group>
 
@@ -527,7 +669,7 @@ export default function PositionDetails()
                         {selectedPosition.token1}
                         </Text>
                         <Text fw={700} size="md"  c="purple">
-                        {selectedPosition.token1Amount1}
+                        {roundIfCloseToWhole(selectedPosition.token1Amount1)}
                         </Text>
                     </Group>
                     </Box>
@@ -542,26 +684,7 @@ export default function PositionDetails()
 
                 </Modal>
 
-
             </>
-            // <>
-            // <h1 className="text-xl font-bold mb-2">
-            // Token ID: {selectedPosition.tokenId.toString()}
-            // </h1>
-            // <p>Token Pair: {selectedPosition.token0} / {selectedPosition.token1}</p>
-            // <p>Current Price: {selectedPosition.currentPrice}</p>
-            // <p>Min Price: {tickToPrice(selectedPosition.tickLower)}</p>
-            // <p>Max Price: {tickToPrice(selectedPosition.tickUpper)}</p>
-            // <p>Liquidity: {selectedPosition.liquidity.toString()}</p>
-            // <p>
-            // Owed Tokens: {selectedPosition.tokensOwed0.toString()} {selectedPosition.token0} /{' '}
-            // {selectedPosition.tokensOwed1.toString()} {selectedPosition.token1}
-            // </p>
-            // <p>
-            // Tokens Added: {selectedPosition.token0Amount0} {selectedPosition.token0} /{' '}
-            // {selectedPosition.token1Amount1} {selectedPosition.token1}
-            // </p>
-            // </>
             )}
         </>
     )

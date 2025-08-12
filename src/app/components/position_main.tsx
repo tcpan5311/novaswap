@@ -10,6 +10,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
+import { roundIfCloseToWhole } from '../utils/position_details/compute_token_utils'
 
 const pools = 
 [
@@ -177,9 +178,6 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
         console.log('all positions owned by signer:', allPositions)
       }
     }
-
-
-
 
   useDebounceEffect(() => 
   {
@@ -364,7 +362,7 @@ const removeLiquidity = async () =>
                     <Text size="sm">Max: {tickToPrice(position.tickUpper)}</Text>
                     {/* <Text size="sm">Liquidity: {position.liquidity.toString()}</Text> */}
                     <Text size="sm">
-                    Tokens added: {position.token0Amount0} {position.token0} / {position.token1Amount1} {position.token1}
+                    Tokens added: {roundIfCloseToWhole(position.token0Amount0)} {position.token0} / {roundIfCloseToWhole(position.token1Amount1)} {position.token1}
                     </Text>
                   </Card>
                 </UnstyledButton>
