@@ -16,6 +16,7 @@ import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
+import {priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
@@ -59,17 +60,17 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
 
 const getCanonicalOrder = (tokenA: CryptocurrencyDetail, tokenB: CryptocurrencyDetail) => 
 {
-    const token1First = tokenA.Address.toLowerCase() < tokenB.Address.toLowerCase()
+    const token0First = tokenA.Address.toLowerCase() < tokenB.Address.toLowerCase()
 
-    return token1First ? 
+    return token0First ? 
     {
-        token1: tokenA,
-        token2: tokenB
+        token0: tokenA,
+        token1: tokenB
     }
     : 
     {
-        token1: tokenB,
-        token2: tokenA
+        token0: tokenB,
+        token1: tokenA
     }
 }
 
@@ -93,8 +94,8 @@ export default function PositionCreate()
     const [query, setQuery] = useState('')
     const filtered = cryptocurrencies.filter(item => item.Label.toLowerCase().includes(query.toLowerCase()))
     const [hovered, setHovered] = useState(-1)
+    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
-    const [selectedToken2, setSelectedToken2] = useState<CryptocurrencyDetail | null>(null)
     const [fee, setFee] = useState<number | null>(null)
     const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
 
@@ -155,8 +156,8 @@ export default function PositionCreate()
     const [minPriceInput, setMinPriceInput] = useState<string>(minPrice.toString())
     const [maxPriceInput, setMaxPriceInput] = useState<string>(maxPrice.toString())
 
+    const [token0Amount, setToken0Amount] = useState<string>('')
     const [token1Amount, setToken1Amount] = useState<string>('')
-    const [token2Amount, setToken2Amount] = useState<string>('')
 
     const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
     const chartRef = useRef<HTMLDivElement>(null)
@@ -166,13 +167,13 @@ export default function PositionCreate()
 
     const [requireInitialPrice, setRequireInitialPrice] = useState<boolean | null>(null)
 
+    const [hideToken0DuringChange, setHideToken0DuringChange] = useState(false)
     const [hideToken1DuringChange, setHideToken1DuringChange] = useState(false)
-    const [hideToken2DuringChange, setHideToken2DuringChange] = useState(false)
 
-    const [lastEditedField, setLastEditedField] = useState<"token1" | "token2" | null>(null)
+    const [lastEditedField, setLastEditedField] = useState<"token0" | "token1" | null>(null)
     const [loading, setLoading] = useState(false)
 
-    const [tokenSelection, setTokenSelection] = useState({displayToken1Name: '', displayToken2Name: '', displayFee: 0})
+    const [tokenSelection, setTokenSelection] = useState({displayToken0Name: '', displayToken1Name: '', displayFee: 0})
 
     useDebounceEffect(() => 
     {
@@ -263,42 +264,142 @@ export default function PositionCreate()
     {
         const runAllUpdates = async () => 
         {
-            if (!validateFirstStep(selectedToken1, selectedToken2, fee)) 
+            if (!selectedToken0 || !selectedToken1 || !fee)
+            {
+                setIsFirstStepValid(false)
+                setRequireInitialPrice(false)
+                return  
+            } 
+
+            if (!validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee)) 
             {
                 setIsFirstStepValid(false)
                 setRequireInitialPrice(false)
                 return
             }
             
-            const { isValid: firstStepValid, poolExists } = await validateFullFirstStep(selectedToken1, selectedToken2, fee, initialPrice, doesPoolExist)
+            const { isValid: firstStepValid, poolExists } = 
+                await validateFullFirstStep(
+                    selectedToken0.Address,
+                    selectedToken1.Address,
+                    fee,
+                    initialPrice,
+                    doesPoolExist
+                )
+
             setIsFirstStepValid(firstStepValid)
             setRequireInitialPrice(!poolExists)
 
-            if (!firstStepValid || !signer || !contracts || !deploymentAddresses) return
+            if (!firstStepValid) return
+
+            if (!isFirstStepValid) return
 
             await validateMinPrice()
             await validateMaxPrice()
 
-            await handleTokenInputDisplay()
+            let currentPrice = await getCurrentPoolPrice() ?? 0
+
+            await handleTokenInputDisplay
+            (
+                selectedToken0.Address,  
+                selectedToken1.Address, 
+                fee,
+                minPrice,
+                maxPrice,
+                currentPrice,
+                computeTokenAmount,
+                setHideToken0DuringChange,
+                setHideToken1DuringChange,
+                provider,
+                signer,
+                uniswapV3FactoryContract,
+                getPoolContract
+            )
+            
+            if (lastEditedField === "token0") 
+            {
+                await updateTokenAmounts(
+                    true,
+                    token0Amount,
+                    selectedToken0.Address,  
+                    selectedToken1.Address, 
+                    fee,
+                    minPrice,
+                    maxPrice,
+                    currentPrice,
+                    computeTokenAmount,
+                    setToken0Amount,
+                    setToken1Amount,
+                    lastEditedField,
+                    token0Amount,
+                    token1Amount,
+                    provider,
+                    signer,
+                    uniswapV3FactoryContract,
+                    getPoolContract
+                )
+            }
 
             if (lastEditedField === "token1") 
             {
-                await updateTokenAmounts(true, token1Amount) // convert A → B
-            }
-            if (lastEditedField === "token2") 
-            {
-                await updateTokenAmounts(false, token2Amount) // convert B → A
+                await updateTokenAmounts
+                (
+                    false,
+                    token1Amount,
+                    selectedToken0.Address,  
+                    selectedToken1.Address, 
+                    fee,
+                    minPrice,
+                    maxPrice,
+                    currentPrice,
+                    computeTokenAmount,
+                    setToken0Amount,
+                    setToken1Amount,
+                    lastEditedField,
+                    token0Amount,
+                    token1Amount,
+                    provider,
+                    signer,
+                    uniswapV3FactoryContract,
+                    getPoolContract
+                )
             }
 
-            let currentPrice = await getCurrentPoolPrice() ?? 0
-
-            const secondStepValid = await validateSecondStep(selectedToken1, selectedToken2, fee, minPrice, maxPrice, token1Amount, token2Amount, currentPrice, computeTokenAmount)
+            const secondStepValid = await validateSecondStep(
+                provider,
+                signer,
+                selectedToken0.Address,
+                selectedToken1.Address,
+                fee,
+                minPrice,
+                maxPrice,
+                token0Amount,
+                token1Amount,
+                currentPrice,
+                computeTokenAmount,
+                uniswapV3FactoryContract,
+                getPoolContract
+            )
             setIsSecondStepValid(secondStepValid)
         }
 
         runAllUpdates()
 
-    }, [signer, contracts, deploymentAddresses, selectedToken1, selectedToken2, fee, initialPrice, minPrice, maxPrice, token1Amount, token2Amount, lastEditedField], 500)
+    }, [
+        signer,
+        contracts,
+        deploymentAddresses,
+        selectedToken0,
+        selectedToken1,
+        fee,
+        initialPrice,
+        minPrice,
+        maxPrice,
+        token0Amount,
+        token1Amount,
+        lastEditedField,
+        isFirstStepValid 
+    ], 500)
 
     const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
     {
@@ -331,7 +432,7 @@ export default function PositionCreate()
 
     const handleStepClick = (step: number) => 
     {
-        processStepClick(step, highestStepVisited, setStepActive, selectedToken1, selectedToken2, fee, validateFirstStep, setSelectedToken1, setSelectedToken2, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken1Amount, setToken2Amount, updateTokenSelection)
+        processStepClick(step, highestStepVisited, setStepActive, selectedToken0, selectedToken1, fee, validateFirstStep, setSelectedToken0, setSelectedToken1, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken0Amount, setToken1Amount, updateTokenSelection)
     }
 
     const shouldAllowSelectStep = (step: number) => 
@@ -345,8 +446,8 @@ export default function PositionCreate()
         setStepActive, 
         setHighestStepVisited,
         getCurrentPoolPrice, 
-        setSelectedToken1, 
-        setSelectedToken2,
+        setSelectedToken0, 
+        setSelectedToken1,
         setFee, 
         setInitialPrice, 
         setInitialPriceInput,
@@ -354,8 +455,8 @@ export default function PositionCreate()
         setMaxPrice, 
         setMinPriceInput, 
         setMaxPriceInput,
-        setToken1Amount, 
-        setToken2Amount,
+        setToken0Amount, 
+        setToken1Amount,
         updateTokenSelection
     )
 
@@ -365,8 +466,8 @@ export default function PositionCreate()
         setStepActive, 
         setHighestStepVisited,
         getCurrentPoolPrice, 
-        setSelectedToken1, 
-        setSelectedToken2,
+        setSelectedToken0, 
+        setSelectedToken1,
         setFee, 
         setInitialPrice, 
         setInitialPriceInput,
@@ -374,22 +475,22 @@ export default function PositionCreate()
         setMaxPrice, 
         setMinPriceInput, 
         setMaxPriceInput,
-        setToken1Amount, 
-        setToken2Amount,
+        setToken0Amount, 
+        setToken1Amount,
         updateTokenSelection
     )
 
     const updateTokenSelection = (shouldSet = true) => 
     {
-        if (!selectedToken1 || !selectedToken2 || !fee) return
+        if (!selectedToken0 || !selectedToken1 || !fee) return
 
         if (shouldSet) 
         {
-            const { token1, token2 } = getCanonicalOrder(selectedToken1, selectedToken2)
+            const { token0, token1 } = getCanonicalOrder(selectedToken0, selectedToken1)
             setTokenSelection
             ({
+                displayToken0Name: token0.Label,
                 displayToken1Name: token1.Label,
-                displayToken2Name: token2.Label,
                 displayFee: fee
             })
         } 
@@ -397,8 +498,8 @@ export default function PositionCreate()
         {
             setTokenSelection
             ({
+                displayToken0Name: '',
                 displayToken1Name: '',
-                displayToken2Name: '',
                 displayFee: 0
             })
         }
@@ -459,52 +560,16 @@ export default function PositionCreate()
         }
     }
 
-    //Helper functions
-    const priceToSqrtPBigNumber = (price: number): bigint => 
-    {
-        const DECIMALS = 18
-        const SCALE = 10 ** DECIMALS
-
-        const numerator = JSBI.BigInt(Math.round(price * SCALE))
-        const denominator = JSBI.BigInt(SCALE)
-
-        const jsbi = encodeSqrtRatioX96(numerator, denominator)
-        return BigInt(jsbi.toString())
-    }
-
-    const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
-    {
-        const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
-        const sqrtPriceJSBI = JSBI.BigInt(sqrtPriceX96.toString())
-
-        const sqrtPrice = JSBI.toNumber(sqrtPriceJSBI) / JSBI.toNumber(Q96)
-
-        return sqrtPrice * sqrtPrice
-    }
-
-    const priceToSqrtP = (price: number) => 
-    {
-        const DECIMALS = 18
-        const SCALE = 10 ** DECIMALS
-
-        const numerator = JSBI.BigInt(Math.round(price * SCALE))
-        const denominator = JSBI.BigInt(SCALE)
-
-        return encodeSqrtRatioX96(numerator, denominator)
-    }
-
-    const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
-
     const getCurrentPoolPrice = async () => 
     {
-        if(uniswapV3FactoryContract && selectedToken1 && selectedToken2 && fee)
+        if(uniswapV3FactoryContract && selectedToken0 && selectedToken1 && fee)
         {
-            const poolExist = await doesPoolExist(selectedToken1.Address, selectedToken2.Address, fee)
+            const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
             if (poolExist) 
             {
                 try 
                 {
-                    const poolAddress = await uniswapV3FactoryContract.getPoolAddress(selectedToken1.Address, selectedToken2.Address, fee)
+                    const poolAddress = await uniswapV3FactoryContract.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
                     const poolCallContract = getPoolContract(poolAddress)
                     const slot0 = await poolCallContract?.slot0()
                     const sqrtPriceX96 = slot0.sqrtPriceX96
@@ -525,13 +590,13 @@ export default function PositionCreate()
         }
     }
 
-    const doesPoolExist = async (token1Address: string | null, token2Address: string | null, fee: number | null): Promise<boolean> => 
+    const doesPoolExist = async (token0Address: string | null, token1Address: string | null, fee: number | null): Promise<boolean> => 
     {
-        if (uniswapV3FactoryContract && token1Address && token2Address && fee) 
+        if (uniswapV3FactoryContract && token0Address && token1Address && fee) 
         {
             try 
             {
-                const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token1Address, token2Address, fee)
+                const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
                 return poolAddress !== '0x0000000000000000000000000000000000000000'
             } 
             catch (error) 
@@ -543,231 +608,6 @@ export default function PositionCreate()
 
         return false
     }
-
-    const computeTokenAmount = async (isAToB: boolean, overrideAmount?: string, currentPrice?: number) => 
-    {
-        const network = await provider?.getNetwork()
-        const chainId = Number(network?.chainId)
-
-        const [token1Address, token2Address] = [selectedToken1?.Address ?? "", selectedToken2?.Address ?? ""]
-
-        const [contract1, contract2] = [token1Address, token2Address].map(addr => new ethers.Contract(addr, ERC20Mintable.abi, signer))
-
-        const [decimalA, decimalB, symA, symB] = await Promise.all
-        ([
-            contract1.decimals(), contract2.decimals(),
-            contract1.symbol(), contract2.symbol()
-        ])
-
-        const [tokenA, tokenB] = 
-        [
-            new Token(chainId, token1Address, Number(decimalA), symA),
-            new Token(chainId, token2Address, Number(decimalB), symB)
-        ]
-
-        const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(token1Address, token2Address, fee)
-        const poolCallContract = getPoolContract(poolAddress)
-
-        let pool
-        try 
-        {
-            const [slot0, liquidity] = await Promise.all([poolCallContract?.slot0(), poolCallContract?.liquidity()])
-            
-            const sqrtPriceX96 = slot0.sqrtPriceX96.toString()
-            const currentTick = slot0.tick
-
-            pool = new Pool
-            (
-                tokenA,
-                tokenB,
-                fee ?? 0,
-                sqrtPriceX96,
-                liquidity.toString(),
-                Number(currentTick)
-            )
-        } 
-        catch 
-        {
-            const sqrtPriceX96 = encodeSqrtRatioX96(ethers.parseUnits((currentPrice ?? 0).toString(), decimalA).toString(), ethers.parseUnits("1", decimalB).toString()).toString()
-            pool = new Pool(tokenA, tokenB, fee ?? 0, sqrtPriceX96, "0", priceToTick(currentPrice ?? 0))
-        }
-
-        const buffer = 0.0001
-        const tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
-        const tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
-
-        const getAmount = (amountStr: string, token: Token, decimals: number) => CurrencyAmount.fromRawAmount(token, ethers.parseUnits(amountStr, decimals).toString())
-
-        let amountTokenA: CurrencyAmount<Token>, amountTokenB: CurrencyAmount<Token>
-        const MAX_REASONABLE_AMOUNT = JSBI.exponentiate(JSBI.BigInt(10), JSBI.BigInt(36))
-
-        try 
-        {
-            if (isAToB) 
-            {
-                const amountStr = overrideAmount ?? token1Amount
-                amountTokenA = getAmount(amountStr, tokenA, decimalA)
-
-                const position = Position.fromAmount0
-                ({
-                    pool, 
-                    tickLower, 
-                    tickUpper,
-                    amount0: amountTokenA.quotient,
-                    useFullPrecision: true
-                })
-
-                amountTokenB = position.amount1
-                
-            } 
-            else 
-            {
-                const amountStr = overrideAmount ?? token2Amount
-                amountTokenB = getAmount(amountStr, tokenB, decimalB)
-
-                const position = Position.fromAmount1
-                ({
-                    pool, 
-                    tickLower, 
-                    tickUpper,
-                    amount1: amountTokenB.quotient
-                })
-
-                amountTokenA = position.amount0
-            }
-
-            if (JSBI.greaterThan(amountTokenA.quotient, MAX_REASONABLE_AMOUNT) || JSBI.greaterThan(amountTokenB.quotient, MAX_REASONABLE_AMOUNT)) 
-            {
-                return {
-                    amountA: "0",
-                    amountB: "0"
-                }
-            }
-
-            return {
-                amountA: amountTokenA.toFixed(18),
-                amountB: amountTokenB.toFixed(18)
-            }
-        }
-        catch (error)
-        {
-            return {
-                amountA: "0",
-                amountB: "0"
-            }
-        }
-    }
-
-    const updateTokenAmounts = async (isAToB: boolean, inputValue: string) => 
-    {
-
-        if(!selectedToken1 || !selectedToken2 || !fee || !minPrice || !maxPrice)
-        {
-            return
-        }
-
-        const trimmed = inputValue.trim()
-        if (trimmed === "") 
-        {
-            setToken1Amount("")
-            setToken2Amount("")
-            return
-        }
-        let currentPrice = await getCurrentPoolPrice() ?? 0
-
-        if (!currentPrice || currentPrice <= 0) 
-        {
-            return
-        }
-
-        const { amountA, amountB } = await computeTokenAmount(isAToB, trimmed, currentPrice)
-
-        if (isAToB && lastEditedField !== "token2") 
-        {
-            setToken2Amount(amountB.toString())
-        } 
-        else if (!isAToB && lastEditedField !== "token1") 
-        {
-            setToken1Amount(amountA.toString())
-        }
-
-        console.log(`Token 1 Amount: ${amountA}, Price: ${currentPrice}, Token 2 Amount: ${amountB}`)
-    }
-
-    const handleTokenInputDisplay = async () => 
-    {
-        if (!selectedToken1 || !selectedToken2 || !fee || !minPrice || !maxPrice) return
-
-        try 
-        {
-            const currentPrice = (await getCurrentPoolPrice()) ?? 0
-
-            const threshold = 1e-12
-
-            const resultAtoB = await computeTokenAmount(true, "0.0001", currentPrice)
-            const amountA = parseFloat(resultAtoB?.amountA ?? "0")
-            const amountB = parseFloat(resultAtoB?.amountB ?? "0")
-
-            if (amountA >= threshold && amountB < threshold) 
-            {
-                // Can convert A to 0 B → hide token2
-                setHideToken1DuringChange(false)
-                setHideToken2DuringChange(true)
-                return
-            }
-
-            if (amountB >= threshold && amountA < threshold) 
-            {
-                // Can convert B but token1 is 0 → hide token1
-                setHideToken1DuringChange(true)
-                setHideToken2DuringChange(false)
-                return
-            }
-
-            if (amountA >= threshold && amountB >= threshold) 
-            {
-                // Both amounts are valid → show both
-                setHideToken1DuringChange(false)
-                setHideToken2DuringChange(false)
-                return
-            }
-
-            // Fallback: Try B→A
-            const resultBtoA = await computeTokenAmount(false, "0.0001", currentPrice)
-            const reverseAmountA = parseFloat(resultBtoA?.amountA ?? "0")
-            const reverseAmountB = parseFloat(resultBtoA?.amountB ?? "0")
-
-            if (reverseAmountB >= threshold && reverseAmountA < threshold) 
-            {
-                setHideToken1DuringChange(true)
-                setHideToken2DuringChange(false)
-                return
-            }
-
-            if (reverseAmountA >= threshold && reverseAmountB < threshold) 
-            {
-                setHideToken1DuringChange(false)
-                setHideToken2DuringChange(true)
-                return
-            }
-
-            if (reverseAmountA >= threshold && reverseAmountB >= threshold) 
-            {
-                setHideToken1DuringChange(false)
-                setHideToken2DuringChange(false)
-                return
-            }
-
-            // Both paths returned 0 → show both
-            setHideToken1DuringChange(false)
-            setHideToken2DuringChange(false)
-        } 
-        catch (error) 
-        {
-            console.log(error)
-        }
-    }
-
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
     {
@@ -781,20 +621,20 @@ export default function PositionCreate()
 
         let currentPrice = await getCurrentPoolPrice() ?? 0
 
-        if (isConnected && signer && deploymentAddresses && contracts && selectedToken1 && selectedToken2 && fee && minPrice && maxPrice && token1Amount && token2Amount) 
+        if (isConnected && signer && deploymentAddresses && contracts && selectedToken0 && selectedToken1 && fee && minPrice && maxPrice && token0Amount && token1Amount) 
         {
             setLoading(true)
-            const { token1, token2} = getCanonicalOrder(selectedToken1, selectedToken2)
-            console.log(token1, token2, fee, currentPrice, token1Amount, token2Amount)
+            const { token0, token1} = getCanonicalOrder(selectedToken0, selectedToken1)
+            console.log(token0, token1, fee, currentPrice, token0Amount, token1Amount)
 
             try
             {
-                const poolExist = await doesPoolExist(selectedToken1.Address, selectedToken2.Address, fee)
+                const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
                 if (!poolExist) 
                 {
-                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken1.Address, selectedToken2.Address, fee)
+                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken0.Address, selectedToken1.Address, fee)
                     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1.Address, selectedToken2.Address, fee)
+                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
                     const poolCallContract = getPoolContract(poolAddress) 
                     const sqrtPriceX96 = priceToSqrtPBigNumber(currentPrice)
                     const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
@@ -802,23 +642,23 @@ export default function PositionCreate()
                     console.log(poolInitializeTxReceipt)
                 }
 
-                const amount0Desired = ethers.parseEther(token1Amount)
-                const amount1Desired = ethers.parseEther(token2Amount)
+                const amount0Desired = ethers.parseEther(token0Amount)
+                const amount1Desired = ethers.parseEther(token1Amount)
 
+                if (parseFloat(token0Amount) > 0) 
+                {
+                    await approveTokenTransaction(token0.Address, nftManagerContractAddress, token0Amount, signer)
+                }
                 if (parseFloat(token1Amount) > 0) 
                 {
                     await approveTokenTransaction(token1.Address, nftManagerContractAddress, token1Amount, signer)
-                }
-                if (parseFloat(token2Amount) > 0) 
-                {
-                    await approveTokenTransaction(token2.Address, nftManagerContractAddress, token2Amount, signer)
                 }
 
                 const mintParams = 
                 {
                     recipient: await signer.getAddress(),
-                    tokenA: token1.Address,
-                    tokenB: token2.Address,
+                    tokenA: token0.Address,
+                    tokenB: token1.Address,
                     fee: fee,
                     lowerTick: nearestUsableTick(priceToTick(minPrice), 60),
                     upperTick: nearestUsableTick(priceToTick(maxPrice), 60),
@@ -846,7 +686,7 @@ export default function PositionCreate()
 
     const getTwapPrice = async (secondsAgo: number) => 
     {
-        const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken1?.Address, selectedToken2?.Address, fee)
+        const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
         const poolContract = getPoolContract(poolAddressTest)
 
         const secondsAgos = [secondsAgo, 0]
@@ -925,7 +765,7 @@ export default function PositionCreate()
         <Box pos="relative">
             <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
             {/* Test function for quotePool and swapToken */}
-            <Button
+            {/* <Button
             fullWidth
             radius="md"
             className="mt-[5%]"
@@ -941,7 +781,8 @@ export default function PositionCreate()
             onClick={swapToken}
             >
             Test swap
-            </Button>
+            </Button> */}
+
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>
                     <Box className="flex flex-wrap p-4">
@@ -996,7 +837,7 @@ export default function PositionCreate()
                             >
                             <Input
                                 placeholder="Select token"
-                                value={selectedToken1?.Label ?? ''}
+                                value={selectedToken0?.Label ?? ''}
                                 readOnly
                                 tabIndex={-1}
                                 className="pointer-events-none"
@@ -1016,7 +857,7 @@ export default function PositionCreate()
                             >
                             <Input
                                 placeholder="Select token"
-                                value={selectedToken2?.Label ?? ''}
+                                value={selectedToken1?.Label ?? ''}
                                 readOnly
                                 tabIndex={-1}
                                 className="pointer-events-none"
@@ -1170,7 +1011,7 @@ export default function PositionCreate()
                                     <IconCoinFilled size={40} />
                                     </ActionIcon>
                                     <Text>
-                                    {tokenSelection.displayToken1Name} / {tokenSelection.displayToken2Name}
+                                    {tokenSelection.displayToken0Name} / {tokenSelection.displayToken1Name}
                                     </Text>
 
                                     <Badge color="purple">
@@ -1381,27 +1222,27 @@ export default function PositionCreate()
                                         <Text size="lg" fw={600} c="#4f0099" mt={30}>Deposit tokens</Text>
                                         <Text mt={10} size="sm" c="gray">Specify the token amounts for your liquidity contribution.</Text>
                                         
-                                        {!hideToken1DuringChange && (
+                                        {!hideToken0DuringChange && (
                                             <>
                                                 <Input
                                                 mt={20}
                                                 size="xl"
                                                 placeholder="0"
-                                                value={token1Amount}
+                                                value={token0Amount}
                                                 onChange={async (event) => 
                                                 {
                                                     const input = event.currentTarget.value
                                                     if (/^\d*\.?\d*$/.test(input)) 
                                                     {
-                                                        setToken1Amount(input)
-                                                        setLastEditedField("token1")
+                                                        setToken0Amount(input)
+                                                        setLastEditedField("token0")
                                                     }
                                                 }}
                                                 rightSection=
                                                 {
                                                     <Group align="center">
                                                         <Text>
-                                                        {tokenSelection.displayToken1Name} 
+                                                        {tokenSelection.displayToken0Name} 
                                                         </Text>
                                                         <ActionIcon radius="xl">
                                                         <IconCoinFilled size={40} />
@@ -1414,27 +1255,27 @@ export default function PositionCreate()
 
                                         )}
 
-                                        {!hideToken2DuringChange && (
+                                        {!hideToken1DuringChange && (
                                             <>
                                                 <Input
                                                 mt={20}
                                                 size="xl"
                                                 placeholder="0"
-                                                value={token2Amount}
+                                                value={token1Amount}
                                                 onChange={async (event) => 
                                                 {
                                                     const input = event.currentTarget.value;
                                                     if (/^\d*\.?\d*$/.test(input)) 
                                                     {
-                                                        setToken2Amount(input)
-                                                        setLastEditedField("token2")
+                                                        setToken1Amount(input)
+                                                        setLastEditedField("token1")
                                                     }
                                                 }}
                                                 rightSection=
                                                 {
                                                     <Group align="center">
                                                         <Text>
-                                                        {tokenSelection.displayToken2Name} 
+                                                        {tokenSelection.displayToken1Name} 
                                                         </Text>
                                                         <ActionIcon radius="xl">
                                                         <IconCoinFilled size={40} />
@@ -1511,7 +1352,7 @@ export default function PositionCreate()
                     display="block"
                     onClick={() => 
                     {
-                        handleTokenSelect(item, selectedToken1, selectedToken2, setSelectedToken1, setSelectedToken2, close1)
+                        handleTokenSelect(item, selectedToken0, selectedToken1, setSelectedToken0, setSelectedToken1, close1)
                     }}
                     >
                     {item.Label}
@@ -1546,7 +1387,7 @@ export default function PositionCreate()
                     display="block"
                     onClick={() => 
                     {
-                        handleTokenSelect(item, selectedToken2, selectedToken1, setSelectedToken2, setSelectedToken1, close2)
+                        handleTokenSelect(item, selectedToken1, selectedToken0, setSelectedToken1, setSelectedToken0, close2)
                     }}
                     >
                     {item.Label}

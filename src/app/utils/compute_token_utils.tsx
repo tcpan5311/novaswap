@@ -1,10 +1,31 @@
 import { TickMath, encodeSqrtRatioX96, Pool, Position, nearestUsableTick } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount } from '@uniswap/sdk-core'
 import { ethers } from 'ethers'
-import ERC20Mintable from '../../../../contracts/ERC20Mintable.json'
+import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import JSBI from 'jsbi'
 
-const priceToSqrtP = (price: number) => 
+//Helper functions
+export const priceToSqrtPBigNumber = (price: number): bigint => 
+{
+    const DECIMALS = 18
+    const SCALE = 10 ** DECIMALS
+
+    const numerator = JSBI.BigInt(Math.round(price * SCALE))
+    const denominator = JSBI.BigInt(SCALE)
+
+    const jsbi = encodeSqrtRatioX96(numerator, denominator)
+    return BigInt(jsbi.toString())
+}
+
+export const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
+{
+    const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
+    const sqrtPriceJSBI = JSBI.BigInt(sqrtPriceX96.toString())
+    const sqrtPrice = JSBI.toNumber(sqrtPriceJSBI) / JSBI.toNumber(Q96)
+    return sqrtPrice * sqrtPrice
+}
+
+export const priceToSqrtP = (price: number) => 
 {
     const DECIMALS = 18
     const SCALE = 10 ** DECIMALS
@@ -15,7 +36,7 @@ const priceToSqrtP = (price: number) =>
     return encodeSqrtRatioX96(numerator, denominator)
 }
 
-const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
+export const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
 
 export const roundIfCloseToWhole = (amountStr: string): string => 
 {
@@ -34,8 +55,8 @@ export const roundIfCloseToWhole = (amountStr: string): string =>
 
 export const computeTokenAmount = async (
     isAToB: boolean,
-    overrideAmount: string | undefined,
-    currentPrice: number | undefined,
+    overrideAmount: string,
+    currentPrice: number,
     provider: ethers.Provider,
     signer: ethers.Signer,
     token0Address: string,
@@ -168,11 +189,11 @@ export const updateTokenAmounts = async (
     fee: number,
     minPrice: number,
     maxPrice: number,
-    currentPrice: number | undefined,
+    currentPrice: number,
     computeTokenAmount: (
         isAToB: boolean,
-        overrideAmount: string | undefined,
-        currentPrice: number | undefined,
+        overrideAmount: string,
+        currentPrice: number,
         provider: any,
         signer: any,
         token0Address: string,
@@ -242,16 +263,16 @@ export const updateTokenAmounts = async (
 }
 
 export const handleTokenInputDisplay = async (
-    token0Address: string | undefined,
-    token1Address: string | undefined,
-    fee: number | undefined,
-    minPrice: number | undefined,
-    maxPrice: number | undefined,
-    currentPrice: number | undefined,
+    token0Address: string,
+    token1Address: string,
+    fee: number,
+    minPrice: number,
+    maxPrice: number,
+    currentPrice: number,
     computeTokenAmount: (
         isAToB: boolean,
-        overrideAmount: string | undefined,
-        currentPrice: number | undefined,
+        overrideAmount: string,
+        currentPrice: number,
         provider: any,
         signer: any,
         token0Address: string,

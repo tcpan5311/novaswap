@@ -10,7 +10,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
-import { roundIfCloseToWhole } from '../utils/position_details/compute_token_utils'
+import {sqrtPToPriceNumber, roundIfCloseToWhole } from '../utils/compute_token_utils'
 
 const pools = 
 [
@@ -29,6 +29,8 @@ type PositionData =
   pool: string
   tickLower: number
   tickUpper: number
+  minPrice: number,
+  maxPrice: number,
   currentTick: number
   liquidity: bigint
   currentPrice: number
@@ -59,14 +61,6 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
     const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
     const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
     return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
-  }
-
-  const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
-  {
-    const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
-    const sqrtPriceJSBI = JSBI.BigInt(sqrtPriceX96.toString())
-    const sqrtPrice = JSBI.toNumber(sqrtPriceJSBI) / JSBI.toNumber(Q96)
-    return sqrtPrice * sqrtPrice
   }
 
   export default function PositionMain() 
@@ -157,6 +151,8 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
               pool: poolAddress,
               tickLower: Number(extracted.lowerTick),
               tickUpper: Number(extracted.upperTick),
+              minPrice: tickToPrice(Number(extracted.lowerTick)),
+              maxPrice: tickToPrice(Number(extracted.upperTick)),
               currentTick: tick,
               currentPrice: price,
               liquidity: positionOnPool.liquidity,
@@ -183,6 +179,13 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
   {
     loadPositions()
   }, [signer, contracts, deploymentAddresses], 500)
+
+  const getRangeStatus = (tick: number, tickLower: number, tickUpper: number) => 
+  {
+    if (tick < tickLower) return { status: 'Below Range', color: 'red' }
+    if (tick >= tickUpper) return { status: 'Above Range', color: 'red' }
+    return { status: 'In Range', color: 'green' }
+  }
 
   const router = useRouter()
 
@@ -331,7 +334,12 @@ const removeLiquidity = async () =>
           <ScrollArea h={300} type="always" mt="md" viewportRef={viewportRef}>
             {filteredPositions.map((position, index) => 
             {
-              const inRange = position.tickLower <= position.currentTick && position.currentTick < position.tickUpper
+              const { status: rangeStatus, color: badgeColor } = getRangeStatus
+              (
+                position.currentTick,
+                position.tickLower,
+                position.tickUpper
+              )
 
               return (
                 <UnstyledButton
@@ -351,15 +359,13 @@ const removeLiquidity = async () =>
                       <Text fw={600}>
                         {position.token0} / {position.token1}
                       </Text>
-                      <Badge color={inRange ? 'green' : 'red'}>
-                        {inRange ? 'In Range' : 'Out of Range'}
-                      </Badge>
+                      <Badge color={badgeColor}>{rangeStatus}</Badge>
                     </Group>
 
                     {/* <Text size="sm" color="dimmed">Token ID: {position.tokenId.toString()}</Text> */}
-                     <Text size="sm">Current Price: {position.currentPrice}</Text>
-                    <Text size="sm">Min: {tickToPrice(position.tickLower)}</Text>
-                    <Text size="sm">Max: {tickToPrice(position.tickUpper)}</Text>
+                     <Text size="sm">Current Price: {roundIfCloseToWhole(String(position.currentPrice))}</Text>
+                    <Text size="sm">Min: {roundIfCloseToWhole(String(position.minPrice))}</Text>
+                    <Text size="sm">Max: {roundIfCloseToWhole(String(position.maxPrice))}</Text>
                     {/* <Text size="sm">Liquidity: {position.liquidity.toString()}</Text> */}
                     <Text size="sm">
                     Tokens added: {roundIfCloseToWhole(position.token0Amount0)} {position.token0} / {roundIfCloseToWhole(position.token1Amount1)} {position.token1}

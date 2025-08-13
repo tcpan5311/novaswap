@@ -1,19 +1,3 @@
-import {TickMath, nearestUsableTick, encodeSqrtRatioX96} from '@uniswap/v3-sdk'
-import JSBI from 'jsbi'
-
-const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
-
-const priceToSqrtP = (price: number) => 
-{
-    const DECIMALS = 18
-    const SCALE = 10 ** DECIMALS
-
-    const numerator = JSBI.BigInt(Math.round(price * SCALE))
-    const denominator = JSBI.BigInt(SCALE)
-
-    return encodeSqrtRatioX96(numerator, denominator)
-}
-
 export interface CryptocurrencyDetail 
 {
     Label: string
@@ -22,98 +6,147 @@ export interface CryptocurrencyDetail
 
 export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>
 
-export const validateFirstStep = (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null): boolean => 
+export const validateFirstStep = (token0Address: string, token1Address: string, fee: number): boolean => 
 {
-    const isTokenValid = (token: CryptocurrencyDetail | null): boolean => token !== null && typeof token.Label === 'string' && token.Label.trim() !== '' && typeof token.Address === 'string' && token.Address.trim() !== ''
-    const isFeeValid = (fee: number | null): boolean => fee !== null && !isNaN(fee) && fee >= 0
-    const isSameToken = token1 && token2 && token1.Address === token2.Address
-    return isTokenValid(token1) && isTokenValid(token2) && isFeeValid(fee) && !isSameToken
+    const isTokenValid = (address: string): boolean => address !== null && typeof address === 'string' && address.trim() !== ''
+    const isFeeValid = (fee: number): boolean => fee !== null && !isNaN(fee) && fee >= 0
+    const isSameToken = token0Address && token1Address && token0Address === token1Address
+    return isTokenValid(token0Address) && isTokenValid(token1Address) && isFeeValid(fee) && !isSameToken
 }
 
-export const validateFullFirstStep = async (token1: CryptocurrencyDetail | null, token2: CryptocurrencyDetail | null, fee: number | null, initialPrice: number, doesPoolExist: (token1Address: string | null, token2Address: string | null, fee: number | null) => Promise<boolean>): Promise<{ isValid: boolean; poolExists: boolean }> => 
+export const validateFullFirstStep = async (token0Address: string, token1Address: string, fee: number, initialPrice: number, doesPoolExist: (token0Address: string, token1Address: string, fee: number) => Promise<boolean>): Promise<{ isValid: boolean; poolExists: boolean }> => 
 {
+    if (!validateFirstStep(token0Address, token1Address, fee)) return { isValid: false, poolExists: false }
 
-    if (!validateFirstStep(token1, token2, fee)) return { isValid: false, poolExists: false }
-
-    const token1Address = token1?.Address ?? null
-    const token2Address = token2?.Address ?? null
-
-    const poolExists = await doesPoolExist(token1Address, token2Address, fee)
+    const poolExists = await doesPoolExist(token0Address, token1Address, fee)
     const isValid = poolExists || initialPrice > 0
 
     return { isValid, poolExists }
 }
 
 export const validateSecondStep = async (
-    token1: CryptocurrencyDetail | null,
-    token2: CryptocurrencyDetail | null,
-    fee: number | null,
+    provider: any,
+    signer: any,
+    token0Address: string,
+    token1Address: string,
+    fee: number,
     minPrice: number,
     maxPrice: number,
-    token1Amount: string | null,
-    token2Amount: string | null,
-    currentPrice: number | null,
-    computeTokenAmount: (isAToB: boolean, overrideAmount?: string, initialPrice?: number) => Promise<{ amountA: string, amountB: string }>
+    token0Amount: string,
+    token1Amount: string,
+    currentPrice: number,
+    computeTokenAmount: (
+        isAToB: boolean,
+        overrideAmount: string,
+        currentPrice: number,
+        provider: any,
+        signer: any,
+        token0Address: string,
+        token1Address: string,
+        fee: number,
+        token0Amount: string,
+        token1Amount: string,
+        minPrice: number,
+        maxPrice: number,
+        uniswapV3FactoryContract: any,
+        getPoolContract: (address: string) => any
+    ) => Promise<{ amountA: string; amountB: string }>,
+    uniswapV3FactoryContract: any,
+    getPoolContract: (address: string) => any
 ): Promise<boolean> => 
 {
-    if (!validateFirstStep(token1, token2, fee)) 
+    if (!validateFirstStep(token0Address, token1Address, fee)) 
     {
         return false
     }
 
-    const isPriceValid = (min: number, max: number): boolean => !isNaN(min) && !isNaN(max) && min >= 0 && max >= min
-    const isAmountValid = (amount: string | null): boolean => amount !== null && amount.trim() !== '' && !isNaN(Number(amount)) && Number(amount) > 0
+    const isPriceValid = (min: number, max: number): boolean => !isNaN(min) && !isNaN(max) && min > 0 && max >= min
+    const isAmountValid = (amount: string): boolean => amount !== null && amount.trim() !== '' && !isNaN(Number(amount)) && Number(amount) > 0
 
     if (!isPriceValid(minPrice, maxPrice)) 
     {
         return false
     }
 
-    const price = currentPrice ?? 0
-    if (!token1 || !token2 || !fee || !minPrice || !maxPrice || !currentPrice) 
+    if (!token0Address || !token1Address || fee === null || currentPrice === null || currentPrice <= 0) 
     {
         return false
     }
 
     const threshold = 1e-12
+    
     try 
     {
-        const resultAtoB = await computeTokenAmount(true, "0.0001", price)
+        const resultAtoB = await computeTokenAmount
+        (
+            true,
+            "0.0001",
+            currentPrice,
+            provider,
+            signer,
+            token0Address,
+            token1Address,
+            fee,
+            "",
+            "",
+            minPrice,
+            maxPrice,
+            uniswapV3FactoryContract,
+            getPoolContract
+        )
+
         const amountA = parseFloat(resultAtoB?.amountA ?? "0")
         const amountB = parseFloat(resultAtoB?.amountB ?? "0")
 
         if (amountA >= threshold && amountB < threshold) 
         {
-            return isAmountValid(token1Amount)
+            return isAmountValid(token0Amount)
         }
 
         if (amountB >= threshold && amountA < threshold) 
         {
-            return isAmountValid(token1Amount)
+            return isAmountValid(token0Amount)
         }
 
         if (amountA >= threshold && amountB >= threshold) 
         {
-            return isAmountValid(token1Amount) || isAmountValid(token2Amount)
+            return isAmountValid(token0Amount) || isAmountValid(token1Amount)
         }
 
-        const resultBtoA = await computeTokenAmount(false, "0.0001", price)
+        const resultBtoA = await computeTokenAmount
+        (
+            false,
+            "0.0001",
+            currentPrice,
+            provider,
+            signer,
+            token0Address,
+            token1Address,
+            fee,
+            "",
+            "",
+            minPrice,
+            maxPrice,
+            uniswapV3FactoryContract,
+            getPoolContract
+        )
+
         const reverseA = parseFloat(resultBtoA?.amountA ?? "0")
         const reverseB = parseFloat(resultBtoA?.amountB ?? "0")
 
         if (reverseA >= threshold && reverseB < threshold) 
         {
-            return isAmountValid(token2Amount)
+            return isAmountValid(token1Amount)
         }
 
         if (reverseB >= threshold && reverseA < threshold) 
         {
-            return isAmountValid(token2Amount)
+            return isAmountValid(token1Amount)
         }
 
         if (reverseA >= threshold && reverseB >= threshold) 
         {
-            return isAmountValid(token1Amount) || isAmountValid(token2Amount)
+            return isAmountValid(token0Amount) || isAmountValid(token1Amount)
         }
 
         return false

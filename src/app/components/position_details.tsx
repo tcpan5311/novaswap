@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
-import {roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/position_details/compute_token_utils'
+import {sqrtPToPriceNumber, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 type PositionData = 
 {
@@ -25,6 +25,8 @@ type PositionData =
   pool: string
   tickLower: number
   tickUpper: number
+  minPrice: number,
+  maxPrice: number
   currentTick: number
   liquidity: bigint
   currentPrice: number
@@ -50,14 +52,6 @@ const tickToPrice = (tick: number): number =>
     const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
     const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
     return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
-}
-
-const sqrtPToPriceNumber = (sqrtPriceX96: bigint): number => 
-{
-    const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96))
-    const sqrtPriceJSBI = JSBI.BigInt(sqrtPriceX96.toString())
-    const sqrtPrice = JSBI.toNumber(sqrtPriceJSBI) / JSBI.toNumber(Q96)
-    return sqrtPrice * sqrtPrice
 }
 
 const validatePercentInput = (input: string): number | null => 
@@ -205,6 +199,8 @@ export default function PositionDetails()
                     pool: poolAddress,
                     tickLower: Number(extracted.lowerTick),
                     tickUpper: Number(extracted.upperTick),
+                    minPrice: tickToPrice(Number(extracted.lowerTick)),
+                    maxPrice: tickToPrice(Number(extracted.upperTick)),
                     currentTick: tick,
                     currentPrice: price,
                     liquidity: positionOnPool.liquidity,
@@ -253,8 +249,8 @@ export default function PositionDetails()
             selectedPosition.token0Address,  
             selectedPosition.token1Address, 
             selectedPosition.fee,
-            tickToPrice(selectedPosition.tickLower),
-            tickToPrice(selectedPosition.tickUpper),
+            selectedPosition.minPrice,
+            selectedPosition.maxPrice,
             selectedPosition.currentPrice,
             computeTokenAmount,
             setHideToken0DuringChange,
@@ -273,8 +269,8 @@ export default function PositionDetails()
             selectedPosition.token0Address,
             selectedPosition.token1Address,
             selectedPosition.fee,
-            tickToPrice(selectedPosition.tickLower),
-            tickToPrice(selectedPosition.tickUpper),
+            selectedPosition.minPrice,
+            selectedPosition.maxPrice,
             selectedPosition.currentPrice,
             computeTokenAmount,
             setToken0Amount,
@@ -297,8 +293,8 @@ export default function PositionDetails()
                 selectedPosition.token0Address,
                 selectedPosition.token1Address,
                 selectedPosition.fee,
-                tickToPrice(selectedPosition.tickLower),
-                tickToPrice(selectedPosition.tickUpper),
+                selectedPosition.minPrice,
+                selectedPosition.maxPrice,
                 selectedPosition.currentPrice,
                 computeTokenAmount,
                 setToken0Amount,
@@ -339,6 +335,14 @@ export default function PositionDetails()
         runAllUpdates()
     }, [signer, contracts, deploymentAddresses, token0Amount, token1Amount, lastEditedField], 500)
 
+    const getRangeStatus = (tick: number, tickLower: number, tickUpper: number) => 
+    {
+        if (tick < tickLower) return { status: 'Below Range', color: 'red' }
+        if (tick >= tickUpper) return { status: 'Above Range', color: 'red' }
+        return { status: 'In Range', color: 'green' }
+    }
+    const { status: rangeStatus, color: rangeColor } = getRangeStatus(selectedPosition?.currentTick ?? 0, selectedPosition?.tickLower ?? 0, selectedPosition?.tickUpper ?? 0)
+    
     const addLiquidity = async () =>
     {
         console.log("Hello world")
@@ -420,6 +424,10 @@ export default function PositionDetails()
                                 <Badge color="purple" ml={10}>
                                     <Text>{selectedPosition.fee}</Text>
                                 </Badge>
+
+                                <Badge color={rangeColor} ml={10}>
+                                    {rangeStatus}
+                                </Badge>
                             </Box>
 
                             <Box mt={10} className="sm:mt-5 md:mt-5">
@@ -456,6 +464,11 @@ export default function PositionDetails()
                         <Badge color="purple" ml={10}>
                             <Text>{selectedPosition.fee}</Text>
                         </Badge>
+
+                        <Badge color={rangeColor} ml={10}>
+                            {rangeStatus}
+                        </Badge>
+                        
                     </Box>
 
                     {!hideToken0DuringChange && (
@@ -569,6 +582,10 @@ export default function PositionDetails()
 
                         <Badge color="purple" ml={10}>
                             <Text>{selectedPosition.fee}</Text>
+                        </Badge>
+
+                        <Badge color={rangeColor} ml={10}>
+                            {rangeStatus}
                         </Badge>
                     </Box>
 

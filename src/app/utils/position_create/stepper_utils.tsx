@@ -13,12 +13,12 @@ export const processStepClick = (
     step: number, 
     highestStepVisited: number, 
     setStepActive: (val: number) => void,
+    selectedToken0: any, 
     selectedToken1: any, 
-    selectedToken2: any, 
     fee: any, 
-    validateFirstStep: (token1: any, token2: any, fee: any) => boolean, 
+    validateFirstStep: (token0: any, token1: any, fee: any) => boolean, 
+    setSelectedToken0: (val: any) => void, 
     setSelectedToken1: (val: any) => void, 
-    setSelectedToken2: (val: any) => void, 
     setFee: (val: any) => void,
     setInitialPrice: (val: number) => void,
     setInitialPriceInput: (val: string) => void,
@@ -26,15 +26,15 @@ export const processStepClick = (
     setMaxPrice: (val: number) => void,
     setMinPriceInput: (val: string) => void,
     setMaxPriceInput: (val: string) => void,
+    setToken0Amount: (val: string) => void,
     setToken1Amount: (val: string) => void,
-    setToken2Amount: (val: string) => void,
     updateTokenSelection: (shouldSet: boolean) => void) => 
     {
         if (!shouldAllowStep(step, highestStepVisited)) return
 
         if (step === 1) 
         {
-            if (validateFirstStep(selectedToken1, selectedToken2, fee)) 
+            if (validateFirstStep(selectedToken0, selectedToken1, fee)) 
             {
                 setStepActive(step + 1)
             }
@@ -43,8 +43,8 @@ export const processStepClick = (
         {
             if (step === 0) 
             {
+                setSelectedToken0(null)
                 setSelectedToken1(null)
-                setSelectedToken2(null)
                 setFee(null)
                 setInitialPrice(0)
                 setInitialPriceInput("")
@@ -52,8 +52,8 @@ export const processStepClick = (
                 setMaxPrice(0)
                 setMinPriceInput("")
                 setMaxPriceInput("")
+                setToken0Amount("")
                 setToken1Amount("")
-                setToken2Amount("")
                 updateTokenSelection(false)
             }
             setStepActive(step + 1)
@@ -66,8 +66,8 @@ export const processStepClick = (
         setStepActive: (val: number) => void,
         setHighestStepVisited: (fn: (prev: number) => number) => void,
         getCurrentPoolPrice: () => Promise<number | null | undefined>,
+        setSelectedToken0: (val: any) => void, 
         setSelectedToken1: (val: any) => void, 
-        setSelectedToken2: (val: any) => void, 
         setFee: (val: any) => void, 
         setInitialPrice: (val: number) => void,
         setInitialPriceInput: (val: string) => void,
@@ -75,8 +75,8 @@ export const processStepClick = (
         setMaxPrice: (val: number) => void,
         setMinPriceInput: (val: string) => void,
         setMaxPriceInput: (val: string) => void,
+        setToken0Amount: (val: string) => void,
         setToken1Amount: (val: string) => void,
-        setToken2Amount: (val: string) => void,
         updateTokenSelection: (shouldSet: boolean) => void) => 
         {
             const delta = direction === 'next' ? 1 : -1
@@ -89,8 +89,8 @@ export const processStepClick = (
 
             if (direction === 'back') 
             {
+                setSelectedToken0(null)
                 setSelectedToken1(null)
-                setSelectedToken2(null)
                 setFee(null)
                 setInitialPrice(0)
                 setInitialPriceInput("")
@@ -98,8 +98,8 @@ export const processStepClick = (
                 setMaxPrice(0)
                 setMinPriceInput("")
                 setMaxPriceInput("")
+                setToken0Amount("")
                 setToken1Amount("")
-                setToken2Amount("")
                 updateTokenSelection(false)
             }
 
