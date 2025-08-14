@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
-import {sqrtPToPriceNumber, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import {sqrtPToPriceNumber, priceToTick, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 type PositionData = 
 {
@@ -88,6 +88,8 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionDetails() 
 {
     const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+
+    const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
 
     const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null)
@@ -125,6 +127,7 @@ export default function PositionDetails()
     {
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
         {
+            setNftManagerContractAddress(deploymentAddresses?.UniswapV3NFTManagerAddress ?? "")
             setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
             const manager = contracts.UniswapV3NFTManagerContract
             const address = await signer.getAddress()
@@ -343,9 +346,58 @@ export default function PositionDetails()
     }
     const { status: rangeStatus, color: rangeColor } = getRangeStatus(selectedPosition?.currentTick ?? 0, selectedPosition?.tickLower ?? 0, selectedPosition?.tickUpper ?? 0)
     
-    const addLiquidity = async () =>
+    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
     {
-        console.log("Hello world")
+        const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
+        const parsedAmount = ethers.parseEther(amount)
+        await approveTokenContract.approve(spenderAddress, parsedAmount)
+    }
+
+    const addLiquidity = async () => 
+    {
+        if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null && selectedPosition) 
+        {
+            console.log(selectedPosition?.token0Address, selectedPosition?.token1Address, selectedPosition?.fee, selectedPosition?.currentPrice, token0Amount, token1Amount)
+            
+            try
+            {
+                const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract     
+                const amount0Desired = ethers.parseEther(token0Amount)
+                const amount1Desired = ethers.parseEther(token1Amount)
+
+                if (parseFloat(token0Amount) > 0) 
+                {
+                    await approveTokenTransaction(selectedPosition?.token0Address, nftManagerContractAddress, token0Amount, signer)
+                }
+                if (parseFloat(token1Amount) > 0) 
+                {
+                    await approveTokenTransaction(selectedPosition?.token1Address, nftManagerContractAddress, token1Amount, signer)
+                }
+
+                const mintParams = 
+                {
+                    recipient: await signer.getAddress(),
+                    tokenA: selectedPosition?.token0Address,
+                    tokenB: selectedPosition?.token1Address,
+                    fee: selectedPosition?.fee,
+                    lowerTick: nearestUsableTick(priceToTick(selectedPosition.minPrice), 60),
+                    upperTick: nearestUsableTick(priceToTick(selectedPosition.maxPrice), 60),
+                    amount0Desired,
+                    amount1Desired,
+                    amount0Min: 0,
+                    amount1Min: 0
+                }
+
+                const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+                const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
+                console.log(nftManagerMintLiquidityTx)
+            }
+            catch(error)
+            {
+                console.log(error)
+            }
+        }
+
     }
 
     const removeLiquidity = async () => 
