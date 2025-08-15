@@ -10,7 +10,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
-import {sqrtPToPriceNumber, roundIfCloseToWhole } from '../utils/compute_token_utils'
+import {sqrtPToPriceNumber, tickToPrice, roundIfCloseToWhole } from '../utils/compute_token_utils'
 
 const pools = 
 [
@@ -24,8 +24,11 @@ const pools =
 type PositionData = 
 {
   tokenId: bigint
+  token0Address: string
+  token1Address: string
   token0: string
   token1: string
+  fee: number
   pool: string
   tickLower: number
   tickUpper: number
@@ -54,14 +57,6 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
         return () => clearTimeout(handler)
     }, [...deps, delay])
 }
-
-  const tickToPrice = (tick: number): number => 
-  {
-    const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick)
-    const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
-    const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
-    return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
-  }
 
   export default function PositionMain() 
   {
@@ -146,8 +141,11 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
             allPositions.push
             ({
               tokenId,
+              token0Address: token0Address,
+              token1Address: token1Address,
               token0: symbol0,
               token1: symbol1,
+              fee: fee,
               pool: poolAddress,
               tickLower: Number(extracted.lowerTick),
               tickUpper: Number(extracted.upperTick),

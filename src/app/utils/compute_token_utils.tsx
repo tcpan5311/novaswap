@@ -38,6 +38,14 @@ export const priceToSqrtP = (price: number) =>
 
 export const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceToSqrtP(price))
 
+export const tickToPrice = (tick: number): number => 
+{
+const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick)
+const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
+const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
+return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
+}
+
 export const roundIfCloseToWhole = (amountStr: string): string => 
 {
     const epsilon = 1e-18

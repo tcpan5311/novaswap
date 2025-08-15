@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
-import {sqrtPToPriceNumber, priceToTick, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import {sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 type PositionData = 
 {
@@ -45,14 +45,6 @@ const quickSelectOptions =
   { label: '75%', value: 75 },
   { label: 'Max', value: 100 },
 ]
-
-const tickToPrice = (tick: number): number => 
-{
-    const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick)
-    const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
-    const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
-    return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
-}
 
 const validatePercentInput = (input: string): number | null => 
 {
@@ -357,7 +349,7 @@ export default function PositionDetails()
     {
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null && selectedPosition) 
         {
-            console.log(selectedPosition?.token0Address, selectedPosition?.token1Address, selectedPosition?.fee, selectedPosition?.currentPrice, token0Amount, token1Amount)
+            console.log(selectedPosition?.token0Address, selectedPosition?.token1Address, token0Amount, token1Amount)
             
             try
             {
@@ -374,23 +366,18 @@ export default function PositionDetails()
                     await approveTokenTransaction(selectedPosition?.token1Address, nftManagerContractAddress, token1Amount, signer)
                 }
 
-                const mintParams = 
+                const addLiquidityParams = 
                 {
-                    recipient: await signer.getAddress(),
-                    tokenA: selectedPosition?.token0Address,
-                    tokenB: selectedPosition?.token1Address,
-                    fee: selectedPosition?.fee,
-                    lowerTick: nearestUsableTick(priceToTick(selectedPosition.minPrice), 60),
-                    upperTick: nearestUsableTick(priceToTick(selectedPosition.maxPrice), 60),
+                    tokenId,
                     amount0Desired,
                     amount1Desired,
                     amount0Min: 0,
                     amount1Min: 0
                 }
 
-                const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
-                const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
-                console.log(nftManagerMintLiquidityTx)
+                const nftManagerAddLiquidity = await uniswapV3NFTManagerContract?.addLiquidity(addLiquidityParams)
+                const nftManagerAddLiquidityTx = await nftManagerAddLiquidity.wait()
+                console.log(nftManagerAddLiquidityTx)
             }
             catch(error)
             {
