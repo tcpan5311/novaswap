@@ -4,6 +4,30 @@ import { ethers } from 'ethers'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import JSBI from 'jsbi'
 
+export type PositionData = 
+{
+  tokenId: bigint
+  token0Address: string
+  token1Address: string
+  token0: string
+  token1: string
+  fee: number
+  pool: string
+  tickLower: number
+  tickUpper: number
+  minPrice: number,
+  maxPrice: number
+  currentTick: number
+  liquidity: bigint
+  currentPrice: number
+  feeGrowthInside0LastX128: bigint
+  feeGrowthInside1LastX128: bigint
+  tokensOwed0: bigint
+  tokensOwed1: bigint
+  token0Amount0: string
+  token1Amount1: string
+}
+
 //Helper functions
 export const priceToSqrtPBigNumber = (price: number): bigint => 
 {

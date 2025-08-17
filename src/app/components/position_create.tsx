@@ -15,35 +15,11 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/position_create/validator_utils'
-import {priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
+import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
-
-type PositionData = 
-{
-  tokenId: bigint
-  token0Address: string
-  token1Address: string
-  token0: string
-  token1: string
-  fee: number
-  pool: string
-  tickLower: number
-  tickUpper: number
-  minPrice: number,
-  maxPrice: number,
-  currentTick: number
-  liquidity: bigint
-  currentPrice: number
-  feeGrowthInside0LastX128: bigint
-  feeGrowthInside1LastX128: bigint
-  tokensOwed0: bigint
-  tokensOwed1: bigint
-  token0Amount0: string
-  token1Amount1: string
-}
 
 const feeStructure = 
 [

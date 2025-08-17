@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect } from 'react'
-import { Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal } from '@mantine/core'
+import { Grid, Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
@@ -12,38 +12,26 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
-import {sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
-
-type PositionData = 
-{
-  tokenId: bigint
-  token0Address: string
-  token1Address: string
-  token0: string
-  token1: string
-  fee: number
-  pool: string
-  tickLower: number
-  tickUpper: number
-  minPrice: number,
-  maxPrice: number
-  currentTick: number
-  liquidity: bigint
-  currentPrice: number
-  feeGrowthInside0LastX128: bigint
-  feeGrowthInside1LastX128: bigint
-  tokensOwed0: bigint
-  tokensOwed1: bigint
-  token0Amount0: string
-  token1Amount1: string
-}
+import {PositionData, sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import { validateAmounts, validatePercent } from '../utils/validator_utils'
+import {LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,} from "recharts"
 
 const quickSelectOptions = 
 [
-  { label: '25%', value: 25 },
-  { label: '50%', value: 50 },
-  { label: '75%', value: 75 },
-  { label: 'Max', value: 100 },
+    { label: '25%', value: 25 },
+    { label: '50%', value: 50 },
+    { label: '75%', value: 75 },
+    { label: 'Max', value: 100 },
+]
+
+const mockData = 
+[
+    { name: "Day 1", value: 400 },
+    { name: "Day 2", value: 300 },
+    { name: "Day 3", value: 600 },
+    { name: "Day 4", value: 800 },
+    { name: "Day 5", value: 500 },
+    { name: "Day 6", value: 700 },
 ]
 
 const validatePercentInput = (input: string): number | null => 
@@ -88,7 +76,7 @@ export default function PositionDetails()
     const searchParams = useSearchParams()
     const [tokenId, setTokenId] = useState<bigint | null>(null)
     const [opened1, { open: originalOpen1, close: originalClose1 }] = useDisclosure(false)
-    const [opened2, { open: open2, close: close2 }] = useDisclosure(false)
+    const [opened2, { open: originalOpen2, close: originalClose2 }] = useDisclosure(false)
 
     const [percent, setPercent] = useState<number | null>(null)
     const [percentInput, setPercentInput] = useState<string>('')
@@ -102,6 +90,8 @@ export default function PositionDetails()
     const [hideToken0DuringChange, setHideToken0DuringChange] = useState(false)
     const [hideToken1DuringChange, setHideToken1DuringChange] = useState(false)
 
+    const [loading, setLoading] = useState(false)
+
     const open1 = () => 
     {
         originalOpen1()
@@ -113,6 +103,18 @@ export default function PositionDetails()
         originalClose1()
         setToken0Amount("")
         setToken1Amount("")
+    }
+
+    const open2 = () => 
+    {
+        originalOpen2()
+    }
+
+    const close2 = () => 
+    {
+        originalClose2()
+        setPercent(null)
+        setPercentInput("")
     }
 
     const loadPositionDetails = async (position_id: bigint) => 
@@ -350,20 +352,23 @@ export default function PositionDetails()
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null && selectedPosition) 
         {
             console.log(selectedPosition?.token0Address, selectedPosition?.token1Address, token0Amount, token1Amount)
+            const token0Amount_ = token0Amount
+            const token1Amount_ = token1Amount
+            setLoading(true)
             
             try
             {
                 const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract     
-                const amount0Desired = ethers.parseEther(token0Amount)
-                const amount1Desired = ethers.parseEther(token1Amount)
+                const amount0Desired = ethers.parseEther(token0Amount_)
+                const amount1Desired = ethers.parseEther(token1Amount_)
 
                 if (parseFloat(token0Amount) > 0) 
                 {
-                    await approveTokenTransaction(selectedPosition?.token0Address, nftManagerContractAddress, token0Amount, signer)
+                    await approveTokenTransaction(selectedPosition?.token0Address, nftManagerContractAddress, token0Amount_, signer)
                 }
                 if (parseFloat(token1Amount) > 0) 
                 {
-                    await approveTokenTransaction(selectedPosition?.token1Address, nftManagerContractAddress, token1Amount, signer)
+                    await approveTokenTransaction(selectedPosition?.token1Address, nftManagerContractAddress, token1Amount_, signer)
                 }
 
                 const addLiquidityParams = 
@@ -378,10 +383,16 @@ export default function PositionDetails()
                 const nftManagerAddLiquidity = await uniswapV3NFTManagerContract?.addLiquidity(addLiquidityParams)
                 const nftManagerAddLiquidityTx = await nftManagerAddLiquidity.wait()
                 console.log(nftManagerAddLiquidityTx)
+
             }
             catch(error)
             {
                 console.log(error)
+            }
+            finally
+            {
+                close1()
+                setLoading(false)
             }
         }
 
@@ -391,6 +402,7 @@ export default function PositionDetails()
     {
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null) 
         {
+            setLoading(true)
             try 
             {
                 const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract
@@ -425,14 +437,20 @@ export default function PositionDetails()
             {
                 console.log(error)
             }
+            finally
+            {
+                close2()
+                setLoading(false)
+            }
         } 
     }
 
 
     return (
-        <>
+        <Box pos="relative">
             {selectedPosition && (
             <>
+                <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
                 <Flex className="flex flex-col space-y-4 p-4 border-none rounded-lg shadow-md mx-auto mt-12 w-full sm:w-[90%] md:w-[70%] lg:w-[50%] xl:w-[40%]">
 
                     <Box className="flex flex-wrap p-4"mt={15} ml={15}>
@@ -480,6 +498,41 @@ export default function PositionDetails()
                         </div>
                         <Divider size="lg" color="purple" mt={10} />
                     </Card>
+
+                    <Grid gutter={{ base: 20, md: 64 }} mt={20} px={8}>
+                        <Grid.Col span={{ base: 12, md: 7 }}>
+                            <Card className="h-[400px] w-full">
+                                <Box className="w-full h-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={mockData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                    </ResponsiveContainer>
+                                </Box>
+
+                            </Card>
+                        </Grid.Col>
+
+                        <Grid.Col span={{ base: 12, md: 5 }} className="flex flex-col items-center gap-5">
+                            <Card className="w-9/10 flex flex-col items-start p-4" shadow="md" padding="lg" radius="md">
+                                <Text fw={700} size="lg">Position</Text>
+                                <Text mt={2}>$145.76</Text>
+                                <Text mt={1} size="sm" c="dimmed">0.030 ETH</Text>
+                            </Card>
+
+                            <Card className="w-9/10 flex flex-col items-start p-4" shadow="md" padding="lg" radius="md" mt={10}>
+                                <Text fw={700} size="lg">Fees earned</Text>
+                                <Text mt={2}>$0</Text>
+                                <Text mt={1} size="sm" c="dimmed">You have no earnings yet</Text>
+                            </Card>
+
+                        </Grid.Col>
+                    </Grid>
+
                 </Flex>
 
                 <Modal
@@ -594,7 +647,8 @@ export default function PositionDetails()
                     fullWidth
                     radius="md"
                     className="mt-[5%]"
-                    onClick={addLiquidity}>
+                    onClick={addLiquidity}
+                    disabled={!validateAmounts(token0Amount, token1Amount)}>
                     Add liquidity
                     </Button>
 
@@ -734,7 +788,8 @@ export default function PositionDetails()
                     fullWidth
                     radius="md"
                     className="mt-[5%]"
-                    onClick={removeLiquidity}>
+                    onClick={removeLiquidity}
+                    disabled={!validatePercent(percentInput)}>
                     Remove liquidity
                     </Button>
 
@@ -742,6 +797,6 @@ export default function PositionDetails()
 
             </>
             )}
-        </>
+        </Box>
     )
 }

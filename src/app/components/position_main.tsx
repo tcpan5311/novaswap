@@ -10,7 +10,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
-import {sqrtPToPriceNumber, tickToPrice, roundIfCloseToWhole } from '../utils/compute_token_utils'
+import {PositionData, sqrtPToPriceNumber, tickToPrice, roundIfCloseToWhole } from '../utils/compute_token_utils'
 
 const pools = 
 [
@@ -20,30 +20,6 @@ const pools =
   { id: 4, pool: "AVAX/DAI", tvl: "$20M", apr: "10%", volume: "$2M" },
   { id: 5, pool: "MATIC/USDT", tvl: "$15M", apr: "18%", volume: "$1.5M" },
 ]
-
-type PositionData = 
-{
-  tokenId: bigint
-  token0Address: string
-  token1Address: string
-  token0: string
-  token1: string
-  fee: number
-  pool: string
-  tickLower: number
-  tickUpper: number
-  minPrice: number,
-  maxPrice: number,
-  currentTick: number
-  liquidity: bigint
-  currentPrice: number
-  feeGrowthInside0LastX128: bigint
-  feeGrowthInside1LastX128: bigint
-  tokensOwed0: bigint
-  tokensOwed1: bigint
-  token0Amount0: string
-  token1Amount1: string
-}
 
 export function useDebounceEffect(callback: () => void, deps: any[], delay: number) 
 {

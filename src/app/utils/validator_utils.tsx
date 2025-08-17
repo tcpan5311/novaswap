@@ -158,6 +158,25 @@ export const validateSecondStep = async (
     }
 }
 
+export const validateAmounts = (token0Amount: string, token1Amount: string): boolean => 
+{
+    const isAmountValid = (amount: string): boolean => 
+    {
+        if (amount === null || typeof amount !== 'string') return false
+        const num = parseFloat(amount)
+        return !isNaN(num) && num > 0
+    }
+
+    return isAmountValid(token0Amount) && isAmountValid(token1Amount)
+}
+
+export const validatePercent = (percent: string): boolean => 
+{
+    if (percent === null || typeof percent !== 'string') return false
+    const num = parseFloat(percent)
+    return !isNaN(num) && num >= 1 && num <= 100
+}
+
 
 
 
