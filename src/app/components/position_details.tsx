@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect } from 'react'
-import { Grid, Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
+import { Grid, Tabs, Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
@@ -32,6 +32,21 @@ const mockData =
     { name: "Day 4", value: 800 },
     { name: "Day 5", value: 500 },
     { name: "Day 6", value: 700 },
+]
+
+const tabData = 
+[
+    { value: '1d', label: '1D' },
+    { value: '1w', label: '1W' },
+    { value: '1m', label: '1M' },
+    { value: '1y', label: '1Y' },
+    { value: 'all', label: 'All Time' },
+]
+
+const nftTabData = 
+[
+    { value: 'Chart', label: 'Chart' },
+    { value: 'Nft', label: 'NFT' },
 ]
 
 const validatePercentInput = (input: string): number | null => 
@@ -445,7 +460,6 @@ export default function PositionDetails()
         } 
     }
 
-
     return (
         <Box pos="relative">
             {selectedPosition && (
@@ -515,16 +529,138 @@ export default function PositionDetails()
                                 </Box>
 
                             </Card>
+
+                            <Grid gutter="md" mt={10} ml={50}>
+                                <Grid.Col span={6}>
+                                    <Tabs color="grape" variant="pills" radius="xl" defaultValue="1d" mt={10}
+                                    styles=
+                                    {{
+                                        list: {
+                                        border: '2px solid purple', 
+                                        padding: '2px',             
+                                        borderRadius: '25px',      
+                                    },
+                                    }}>
+                                        <Tabs.List justify="center" grow>
+                                            {tabData.map(tab => 
+                                            (
+                                                <Tabs.Tab key={tab.value} value={tab.value} className="w-5 text-center">
+                                                    {tab.label}
+                                                </Tabs.Tab>
+                                            ))}
+                                        </Tabs.List>
+                                    </Tabs>
+                                </Grid.Col>
+
+                                <Grid.Col span={2}></Grid.Col>
+
+                                <Grid.Col span={4}>
+                                    <Tabs color="grape" variant="pills" radius="xl" defaultValue="Chart" mt={10}
+                                    styles=
+                                    {{
+                                        list: {
+                                        border: '2px solid purple', 
+                                        padding: '2px',             
+                                        borderRadius: '25px',      
+                                    },
+                                    }}>                                    
+                                        <Tabs.List justify="center" grow>
+                                        {nftTabData.map(tab => 
+                                        (
+                                            <Tabs.Tab key={tab.value} value={tab.value} className="w-5 text-center">
+                                                {tab.label}
+                                            </Tabs.Tab>
+                                        ))}
+                                        </Tabs.List>
+                                    </Tabs>
+                                </Grid.Col>
+                            </Grid>
+
+                            <Grid gutter="md" mt={20} ml={55}>
+                                <Grid.Col span={12}>
+                                    <Text fw={700} size="xl">
+                                    Price Range
+                                    </Text>
+                                </Grid.Col>
+
+                                <Grid.Col span={4}>
+                                    <Text fw={700} size="md" c="dimmed">
+                                        Min price
+                                    </Text>
+                                    <Text fw={700}>
+                                        {selectedPosition.minPrice}
+                                    </Text>
+                                </Grid.Col>
+                                <Grid.Col span={4}>
+                                    <Text fw={700} size="md" c="dimmed">
+                                        Max price
+                                    </Text>
+                                    <Text fw={700}>
+                                        {selectedPosition.maxPrice}
+                                    </Text>
+                                </Grid.Col>
+                                <Grid.Col span={4}>
+                                    <Text fw={700} size="md" c="dimmed">
+                                        Market price
+                                    </Text>
+                                </Grid.Col>
+    
+                            </Grid>
                         </Grid.Col>
 
                         <Grid.Col span={{ base: 12, md: 5 }} className="flex flex-col items-center gap-5">
                             <Card className="w-9/10 flex flex-col items-start p-4" shadow="md" padding="lg" radius="md">
-                                <Text fw={700} size="lg">Position</Text>
-                                <Text mt={2}>$145.76</Text>
-                                <Text mt={1} size="sm" c="dimmed">0.030 ETH</Text>
+                                <Grid>
+                                    <Grid.Col span={8}>
+                                        <Text fw={700} size="xl">
+                                        Position
+                                        </Text>
+                                    </Grid.Col>
+                                    <Grid.Col span={4} /> 
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.Col span={8} mt={10}>
+                                        <Text size="40px" fw={500}>
+                                        $145.76
+                                        </Text>
+                                    </Grid.Col>
+                                    <Grid.Col span={4} /> 
+                                </Grid>
+
+                                <Grid align="center" mt={20}>
+                                    <Grid.Col span={6}>
+                                        <Group gap="xs" align="center">
+                                        <IconCoinFilled size={30} color="purple" />
+                                        <Text fw={700} size="md" truncate  c="dimmed">
+                                            {selectedPosition.token0} position
+                                        </Text>
+                                        </Group>
+                                    </Grid.Col>
+                                    <Grid.Col span={6}>
+                                        <Text fw={700} size="md" c="black" ta="right">
+                                        {roundIfCloseToWhole(selectedPosition.token0Amount0)}
+                                        </Text>
+                                    </Grid.Col>
+
+                                    <Grid.Col span={6}>
+                                        <Group gap="xs" align="center">
+                                        <IconCoinFilled size={30} color="purple" />
+                                        <Text fw={700} size="md" truncate c="dimmed">
+                                            {selectedPosition.token1} position
+                                        </Text>
+                                        </Group>
+                                    </Grid.Col>
+                                    <Grid.Col span={6}>
+                                        <Text fw={700} size="md" c="black" ta="right">
+                                        {roundIfCloseToWhole(selectedPosition.token1Amount1)}
+                                        </Text>
+                                    </Grid.Col>
+                                </Grid>
+
                             </Card>
 
-                            <Card className="w-9/10 flex flex-col items-start p-4" shadow="md" padding="lg" radius="md" mt={10}>
+                            <Card className="w-9/10 flex flex-col items-start p-4" shadow="md" padding="lg" radius="md" mt={20}>
                                 <Text fw={700} size="lg">Fees earned</Text>
                                 <Text mt={2}>$0</Text>
                                 <Text mt={1} size="sm" c="dimmed">You have no earnings yet</Text>
