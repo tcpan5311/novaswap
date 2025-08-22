@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation'
 import {PositionData, sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 import { validateAmounts, validatePercent } from '../utils/validator_utils'
 import {LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,} from "recharts"
+import { fetchVerifyToken } from '../utils/token_utils'
 
 const quickSelectOptions = 
 [
@@ -324,17 +325,22 @@ export default function PositionDetails()
 
     useEffect(() => 
     {
-        const tokenIdParam = searchParams.get('tokenId')
-        if (tokenIdParam) {
-            try 
+        const tokenParam = searchParams.get("token")
+        if (!tokenParam) return
+
+        const fetchPosition = async () => 
+        {
+            const { tokenId, error } = await fetchVerifyToken(tokenParam)
+
+            if (tokenId) 
             {
-                setTokenId(BigInt(tokenIdParam))
+                setTokenId(BigInt(tokenId))
+                const data = await loadPositionDetails(BigInt(tokenId))
+                setSelectedPosition(data)
             } 
-            catch (e) 
-            {
-                console.warn("Invalid tokenId param", tokenIdParam)
-            }
         }
+
+    fetchPosition()
     }, [searchParams])
 
     useDebounceEffect(() => 

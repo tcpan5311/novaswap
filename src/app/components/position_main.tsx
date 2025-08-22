@@ -11,6 +11,7 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
 import {PositionData, sqrtPToPriceNumber, tickToPrice, roundIfCloseToWhole } from '../utils/compute_token_utils'
+import { generateSignedToken } from "../utils/token_utils"
 
 const pools = 
 [
@@ -318,9 +319,13 @@ const removeLiquidity = async () =>
               return (
                 <UnstyledButton
                   key={position.tokenId.toString()}
-                  onClick={() => 
+                  onClick={async () => 
                   {
-                    router.push(`/position_main/position_details?tokenId=${position.tokenId.toString()}`)
+                      const token = await generateSignedToken(position.tokenId.toString())
+                      if (token) 
+                      {
+                        router.push(`/position_main/position_details?token=${token}`);
+                      }
                   }}
                   data-list-item
                   display="block"
