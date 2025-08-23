@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
     try 
     {
-        const { action, tokenId, token } = await req.json()
+        const { action, tokenId, token, token0Amount0, token1Amount1 } = await req.json()
 
         if (action === "sign") 
         {
@@ -21,7 +21,14 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: "Missing tokenId for signing" }, { status: 400 })
             }
 
-            const signedToken = jwt.sign({ tokenId }, secret!, { expiresIn: "1h" })
+            const payload = 
+            {
+                tokenId,
+                token0Amount0: token0Amount0 ?? "0",
+                token1Amount1: token1Amount1 ?? "0",
+            }
+
+            const signedToken = jwt.sign(payload, secret!)
             return NextResponse.json({ token: signedToken })
         }
 
@@ -32,7 +39,16 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: "Missing token for verification" }, { status: 400 })
             }
 
-            const decoded = jwt.verify(token, secret!) as { tokenId: string }
+            const decoded = jwt.verify(token, secret!) as { tokenId: string, token0Amount0: string, token1Amount1: string }
+
+            const amount0 = Number(decoded.token0Amount0)
+            const amount1 = Number(decoded.token1Amount1)
+
+            if (amount0 === 0 && amount1 === 0) 
+            {
+                return NextResponse.json({ message: "Invalid or expired token" }, { status: 200 })
+            }
+
             return NextResponse.json({ tokenId: decoded.tokenId })
         }
 

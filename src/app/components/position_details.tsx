@@ -236,14 +236,6 @@ export default function PositionDetails()
         }
         return null
     }
-
-    const fetchPosition = async () => 
-    {
-        const data = await loadPositionDetails(tokenId ?? 0n)
-        console.log(data)
-        if (data) setSelectedPosition(data)
-    }
-
     const runAllUpdates = async () => 
     {
         const hasSelectedPosition = selectedPosition != null
@@ -332,21 +324,27 @@ export default function PositionDetails()
         {
             const { tokenId, error } = await fetchVerifyToken(tokenParam)
 
-            if (tokenId) 
+            if(!tokenId || error)
+            {
+                router.replace('/position_main')
+                return
+            }
+            else
             {
                 setTokenId(BigInt(tokenId))
                 const data = await loadPositionDetails(BigInt(tokenId))
                 setSelectedPosition(data)
-            } 
+            }
+
         }
 
     fetchPosition()
-    }, [searchParams])
+    }, [searchParams, tokenId, signer, contracts, deploymentAddresses])
 
-    useDebounceEffect(() => 
-    {
-        fetchPosition()
-    }, [tokenId, signer, contracts, deploymentAddresses], 500)
+    // useDebounceEffect(() => 
+    // {
+    //     fetchPosition()
+    // }, [tokenId, signer, contracts, deploymentAddresses], 500)
 
     useDebounceEffect(() => 
     {
@@ -405,6 +403,8 @@ export default function PositionDetails()
                 const nftManagerAddLiquidityTx = await nftManagerAddLiquidity.wait()
                 console.log(nftManagerAddLiquidityTx)
 
+                const updatedPosition = await loadPositionDetails(tokenId)
+                if (updatedPosition) setSelectedPosition(updatedPosition)
             }
             catch(error)
             {
@@ -453,6 +453,13 @@ export default function PositionDetails()
                 console.log(collectFeeReceipt)
 
                 console.log("Liquidity removed and tokens collected successfully.")
+                const updatedPosition = await loadPositionDetails(tokenId)
+                if (updatedPosition) setSelectedPosition(updatedPosition)
+
+                if (percent === 100) 
+                {
+                    router.replace("/position_main")
+                }
             } 
             catch (error) 
             {
