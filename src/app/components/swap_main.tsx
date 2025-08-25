@@ -1,4 +1,5 @@
 "use client"
+import { useEffect } from 'react'
 import { MantineProvider} from '@mantine/core'
 import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea } from '@mantine/core'
 // import { useForm } from '@mantine/form'
@@ -8,23 +9,87 @@ import React from 'react'
 import { useState, useRef } from 'react'
 import { IconTransfer, IconSettings, IconSearch } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
+import { UseBlockchain } from '../context/blockchain_context'
+import { CryptocurrencyDetail, TokenSetter } from '../utils/validator_utils'
+import { ethers, isAddress } from 'ethers'
+import { IconCoinFilled } from '@tabler/icons-react'
 
-const cryptocurrencies: string[] = 
-[
-    "Bitcoin (BTC)",
-    "Solana (SOL)",
-    "Ethereum (ETH)",
-    "Ripple (XRP)",
-    "Binance Coin (BNB)",
-    "Uniswap (UNI)",
-    "Monero (XMR)",
-    "Dogecoin (DOGE)",
-    "Tether (USDT)",
-    "Cardano (ADA)",
-]
+let cryptocurrencies: CryptocurrencyDetail[] = []
+
+export function useDebounceEffect(callback: () => void, deps: any[], delay: number) 
+{
+    useEffect(() => 
+    {
+        const handler = setTimeout(() => 
+        {
+            callback()
+        }, delay)
+
+        return () => clearTimeout(handler)
+    }, [...deps, delay])
+}
+
+const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
+{
+    if (!selectedItem) return
+
+    if (otherToken?.Address === selectedItem.Address) 
+    {
+        setOtherToken(null)
+        setCurrentToken(selectedItem)
+    }
+    else if (currentToken?.Address === selectedItem.Address) 
+    {
+        setCurrentToken(selectedItem)
+    }
+    else 
+    {
+        if (!otherToken && currentToken) 
+        {
+            setOtherToken(currentToken)
+        }
+        setCurrentToken(selectedItem)
+    }
+
+    closeModal()
+}
+
+const handleSwapTokens = (selectedToken0: CryptocurrencyDetail | null, selectedToken1: CryptocurrencyDetail | null,  setSelectedToken0: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>, setSelectedToken1: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>) => 
+{
+    if (selectedToken0 && selectedToken1) 
+    {
+        setSelectedToken0(selectedToken1)
+        setSelectedToken1(selectedToken0)
+    } 
+    else 
+    {
+        console.log("⚠️ Please select both tokens before swapping.")
+    }
+}
 
 export default function SwapMain() 
 {
+    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+
+    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
+    const [usdcContractAddress, setUsdcContractAddress] = useState("")
+    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
+    const [factoryContractAddress, setFactoryContractAddress] = useState('')
+    const [managerContractAddress, setManagerContractAddress] = useState('')
+    const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
+    const [quoterContractAddress, setQuoterContractAddress] = useState('')
+
+    const [ethereumContract, setEthereumContract] = useState<ethers.Contract | null>(null)
+    const [usdcContract, setUsdcContract] = useState<ethers.Contract | null>(null)
+    const [uniswapContract, setUniswapContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3ManagerContract, setUniswapV3ManagerContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
+    const [uniswapV3QuoterContract, setUniswapV3QuoterContract] = useState<ethers.Contract | null>(null)
+
+    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
+    const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
+    
     const [swapValue1, setSwapValue1] = useState('')
     const [swapValue2, setSwapValue2] = useState('')
     const [selectedTab, setSelectedTab] = useState('Swap')
@@ -38,19 +103,77 @@ export default function SwapMain()
     const viewportRef = useRef<HTMLDivElement>(null)
     const [query, setQuery] = useState('')
     const [hovered, setHovered] = useState(-1)
-    const filtered = cryptocurrencies.filter((item) => item.toLowerCase().includes(query.toLowerCase()))
-    const items = filtered.map((item, index) => 
-    (
-        <UnstyledButton
-        data-list-item
-        key={item}
-        display="block"
-        w="100%"
-        p={5}
-        >
-        {item}
-        </UnstyledButton>
-    ))
+    const filtered = cryptocurrencies.filter((item) => item.Label.toLowerCase().includes(query.toLowerCase()))
+    
+    const loadData = async () => 
+    {
+        if (signer && deploymentAddresses && contracts) 
+        {
+            setEthereumContractAddress(deploymentAddresses?.EthereumAddress ?? "")
+            setUsdcContractAddress(deploymentAddresses?.USDCAddress ?? "")
+            setUniswapContractAddress(deploymentAddresses?.UniswapAddress ?? "")
+            setFactoryContractAddress(deploymentAddresses?.UniswapV3FactoryAddress ?? "")
+            setManagerContractAddress(deploymentAddresses?.UniswapV3ManagerAddress ?? "")
+            setNftManagerContractAddress(deploymentAddresses?.UniswapV3NFTManagerAddress ?? "")
+            setQuoterContractAddress(deploymentAddresses?.UniswapV3QuoterAddress ?? "")
+
+            setEthereumContract(contracts?.EthereumContract ?? null)
+            setUsdcContract(contracts?.USDCContract ?? null)
+            setUniswapContract(contracts?.UniswapContract ?? null)
+            setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
+            setUniswapV3ManagerContract(contracts?.UniswapV3ManagerContract ?? null)
+            setUniswapV3NFTManagerContract(contracts?.UniswapV3NFTManagerContract ?? null)
+            setUniswapV3QuoterContract(contracts?.UniswapV3QuoterContract ?? null)
+
+            const [ethereumName, ethereumSymbol, usdcName, usdcSymbol, uniswapName, uniswapSymbol] = 
+            await Promise.all
+            ([
+                contracts.EthereumContract?.name(), contracts.EthereumContract?.symbol(),
+                contracts.USDCContract?.name(), contracts.USDCContract?.symbol(),
+                contracts.UniswapContract?.name(), contracts.UniswapContract?.symbol()
+            ])
+
+            cryptocurrencies = 
+            [
+                { Label: `${ethereumName} (${ethereumSymbol})`, Address: deploymentAddresses?.EthereumAddress ?? "" },
+                { Label: `${usdcName} (${usdcSymbol})`, Address: deploymentAddresses?.USDCAddress ?? "" },
+                { Label: `${uniswapName} (${uniswapSymbol})`, Address: deploymentAddresses?.UniswapAddress ?? "" },
+            ]
+        }
+    }
+
+    useDebounceEffect(() => 
+    {
+        loadData()
+    }, [signer, contracts, deploymentAddresses], 500)
+
+    useDebounceEffect(() => 
+    {
+        const fetchQuote = async () => 
+        {
+            if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 || !swapValue1) return
+
+            try 
+            {
+                const quoteParams = 
+                {
+                    tokenIn: selectedToken0.Address,
+                    tokenOut: selectedToken1.Address,
+                    fee: 3000,
+                    amountIn: ethers.parseUnits(swapValue1, 18),
+                    sqrtPriceLimitX96: 0
+                }
+                const [amountOut] = await uniswapV3QuoterContract.quoteSingle.staticCall(quoteParams)
+                setSwapValue2(ethers.formatUnits(amountOut, 18))
+            } 
+            catch (err) 
+            {
+                setSwapValue2("")
+            }
+        }
+
+        fetchQuote()
+    }, [swapValue1, selectedToken0, selectedToken1, uniswapV3QuoterContract], 500)
 
     return (
         <div className="bg-white mt-[5%] h-screen">
@@ -92,17 +215,26 @@ export default function SwapMain()
                                 placeholder="0"
                                 rightSection=
                                 {
-                                    <Button size="sm" radius="xl" onClick={open1}>
-                                        Select Token
+                                    <Button radius="xl" onClick={open1} leftSection={<IconCoinFilled size={17} />}>
+                                        {selectedToken0 ? selectedToken0.Label : "Select Token"}
                                     </Button>
                                 }
-                                rightSectionWidth={135}
+                                rightSectionWidth={145}
                                 />
 
                                 <ActionIcon 
                                     size={42} 
                                     variant="default" 
-                                    className= "self-center mt-[5%]" // Add this class
+                                    className= "self-center mt-[5%]" 
+                                    onClick={() => 
+                                    handleSwapTokens
+                                    (
+                                        selectedToken0,
+                                        selectedToken1,
+                                        setSelectedToken0,
+                                        setSelectedToken1
+                                    )
+                                    }
                                     >
                                     <IconTransfer size={24} />
                                 </ActionIcon>
@@ -116,14 +248,21 @@ export default function SwapMain()
                                 placeholder="0"
                                 rightSection=
                                 {
-                                    <Button size="sm" radius="xl" onClick={open2}>
-                                        Select Token
+                                    <Button size="sm" radius="xl" onClick={open2} leftSection={<IconCoinFilled size={17} />}>
+                                        <Group align='center'>
+                                            {selectedToken1 ? selectedToken1.Label : "Select Token"}
+                                        </Group>
                                     </Button>
                                 }
-                                rightSectionWidth={135}
+                                rightSectionWidth={145}
                                 />
 
-                                <Button fullWidth radius="md" className= "mt-[10%]">Connect wallet</Button>
+                                {isConnected ? (
+                                    <Button fullWidth radius="md" className= "mt-[10%]">Swap</Button>
+                                ):
+                                (
+                                    <Button fullWidth radius="md" className= "mt-[10%]" onClick={connectWallet}>Connect Wallet</Button>
+                                )}
                             </>
                             )}
 
@@ -161,7 +300,19 @@ export default function SwapMain()
                 }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
-                    {items}
+                    {filtered.map((item) => (
+                        <UnstyledButton
+                        key={item.Address}
+                        data-list-item
+                        display="block"
+                        onClick={() => 
+                        {
+                            handleTokenSelect(item, selectedToken0, selectedToken1, setSelectedToken0, setSelectedToken1, close1)
+                        }}
+                        >
+                        {item.Label}
+                        </UnstyledButton>
+                    ))}
                 </ScrollArea>
             </Modal>
 
@@ -184,7 +335,19 @@ export default function SwapMain()
                 }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
-                    {items}
+                    {filtered.map((item) => (
+                        <UnstyledButton
+                        key={item.Address}
+                        data-list-item
+                        display="block"
+                        onClick={() => 
+                        {
+                            handleTokenSelect(item, selectedToken1, selectedToken0, setSelectedToken1, setSelectedToken0, close2)
+                        }}
+                        >
+                        {item.Label}
+                        </UnstyledButton>
+                    ))}
                 </ScrollArea>
             </Modal>
         </div>
