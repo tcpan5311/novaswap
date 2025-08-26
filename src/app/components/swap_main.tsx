@@ -13,6 +13,9 @@ import { UseBlockchain } from '../context/blockchain_context'
 import { CryptocurrencyDetail, TokenSetter } from '../utils/validator_utils'
 import { ethers, isAddress } from 'ethers'
 import { IconCoinFilled } from '@tabler/icons-react'
+import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount, TickListDataProvider } from '@uniswap/v3-sdk'
+import { Token, CurrencyAmount} from '@uniswap/sdk-core'
+import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -54,12 +57,25 @@ const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: Cry
     closeModal()
 }
 
-const handleSwapTokens = (selectedToken0: CryptocurrencyDetail | null, selectedToken1: CryptocurrencyDetail | null,  setSelectedToken0: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>, setSelectedToken1: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>) => 
+const handleSwitchToken = 
+(
+    selectedToken0: CryptocurrencyDetail | null, 
+    selectedToken1: CryptocurrencyDetail | null,  
+    setSelectedToken0: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>, 
+    setSelectedToken1: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>,
+    swapValue1: string,
+    swapValue2: string,
+    setSwapValue1: React.Dispatch<React.SetStateAction<string>>,
+    setSwapValue2: React.Dispatch<React.SetStateAction<string>>
+) => 
 {
     if (selectedToken0 && selectedToken1) 
     {
         setSelectedToken0(selectedToken1)
         setSelectedToken1(selectedToken0)
+
+        setSwapValue1(() => swapValue2 || '')
+        setSwapValue2(() => swapValue1 || '')
     } 
     else 
     {
@@ -104,6 +120,8 @@ export default function SwapMain()
     const [query, setQuery] = useState('')
     const [hovered, setHovered] = useState(-1)
     const filtered = cryptocurrencies.filter((item) => item.Label.toLowerCase().includes(query.toLowerCase()))
+
+    const [activeInput, setActiveInput] = useState<"swap1" | "swap2" | null>(null)
     
     const loadData = async () => 
     {
@@ -142,6 +160,18 @@ export default function SwapMain()
         }
     }
 
+    const handleSwap1Change = (value: string) => 
+    {
+        setActiveInput("swap1")
+        setSwapValue1(value)
+    }
+
+    const handleSwap2Change = (value: string) => 
+    {
+        setActiveInput("swap2")
+        setSwapValue2(value)
+    }
+
     useDebounceEffect(() => 
     {
         loadData()
@@ -149,31 +179,49 @@ export default function SwapMain()
 
     useDebounceEffect(() => 
     {
+        if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 ||!provider) return
+
+        if (activeInput === "swap1" && !swapValue1) 
+        {
+            setSwapValue2("")
+            return
+        }
+        if (activeInput === "swap2" && !swapValue2) 
+        {
+            setSwapValue1("")
+            return
+        }
+
         const fetchQuote = async () => 
         {
-            if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 || !swapValue1) return
-
             try 
             {
-                const quoteParams = 
+                if (activeInput === "swap1" && swapValue1) 
                 {
-                    tokenIn: selectedToken0.Address,
-                    tokenOut: selectedToken1.Address,
-                    fee: 3000,
-                    amountIn: ethers.parseUnits(swapValue1, 18),
-                    sqrtPriceLimitX96: 0
+                    const path = ethers.solidityPacked(
+                    ["address", "uint24", "address"],
+                    [selectedToken0.Address, 3000, selectedToken1.Address]
+                )
+
+                    const [amountOut] = await uniswapV3QuoterContract.quote.staticCall(path, ethers.parseUnits(swapValue1, 18))
+
+                    setSwapValue2(ethers.formatUnits(amountOut, 18))
+                } 
+                else if (activeInput === "swap2" && swapValue2) 
+                {
+                    setSwapValue1("10")
                 }
-                const [amountOut] = await uniswapV3QuoterContract.quoteSingle.staticCall(quoteParams)
-                setSwapValue2(ethers.formatUnits(amountOut, 18))
             } 
             catch (err) 
             {
-                setSwapValue2("")
+                console.log(err)
+                if (activeInput === "swap1") setSwapValue2("")
+                else if (activeInput === "swap2") setSwapValue1("")
             }
         }
 
         fetchQuote()
-    }, [swapValue1, selectedToken0, selectedToken1, uniswapV3QuoterContract], 500)
+    }, [swapValue1, swapValue2, selectedToken0, selectedToken1, uniswapV3QuoterContract, activeInput], 500)
 
     return (
         <div className="bg-white mt-[5%] h-screen">
@@ -210,7 +258,7 @@ export default function SwapMain()
                                 size='xl'
                                 classNames= {{description: classes.swap_text_area}}
                                 value={swapValue1}
-                                onChange={(event) => setSwapValue1(event.currentTarget.value)}
+                                onChange={(event) => handleSwap1Change(event.currentTarget.value)}
                                 description="Sell"
                                 placeholder="0"
                                 rightSection=
@@ -227,13 +275,17 @@ export default function SwapMain()
                                     variant="default" 
                                     className= "self-center mt-[5%]" 
                                     onClick={() => 
-                                    handleSwapTokens
-                                    (
-                                        selectedToken0,
-                                        selectedToken1,
-                                        setSelectedToken0,
-                                        setSelectedToken1
-                                    )
+                                        handleSwitchToken
+                                        (
+                                            selectedToken0,
+                                            selectedToken1,
+                                            setSelectedToken0,
+                                            setSelectedToken1,
+                                            swapValue1,
+                                            swapValue2,
+                                            setSwapValue1,
+                                            setSwapValue2
+                                        )
                                     }
                                     >
                                     <IconTransfer size={24} />
@@ -243,7 +295,7 @@ export default function SwapMain()
                                 size='xl'
                                 classNames= {{description: classes.swap_text_area}}
                                 value={swapValue2}
-                                onChange={(event) => setSwapValue2(event.currentTarget.value)}
+                                onChange={(event) => handleSwap2Change(event.currentTarget.value)}
                                 description="Buy"
                                 placeholder="0"
                                 rightSection=
