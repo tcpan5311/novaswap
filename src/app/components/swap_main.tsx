@@ -279,44 +279,43 @@ export default function SwapMain()
 
     const swapExactOutput = async () => 
     {
-        console.log("Nono")
-        // if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
+        if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
 
-        // try 
-        // {
-        //     const amountOut = ethers.parseEther(swapValue2)
+        try 
+        {
+            const amountOut = ethers.parseEther(swapValue2)
 
-        //     const path = ethers.solidityPacked(
-        //         ["address", "uint24", "address"],
-        //         [selectedToken0.Address, 3000, selectedToken1.Address]
-        //     )
+            const path = ethers.solidityPacked(
+                ["address", "uint24", "address"],
+                [selectedToken0.Address, 3000, selectedToken1.Address]
+            )
 
-        //     const [quotedInputAmount] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, amountOut)
-        //     const slippageTolerance = 100n
-        //     const maxAmountIn = quotedInputAmount + (quotedInputAmount * slippageTolerance / 10000n)
+            const [quotedInputAmount] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, amountOut)
+            const slippageTolerance = 100n
+            const maxAmountIn = quotedInputAmount + (quotedInputAmount * slippageTolerance / 10000n)
 
-        //     if (maxAmountIn > 0n) 
-        //     {
-        //         await approveTokenTransaction(selectedToken0.Address, managerContractAddress, maxAmountIn, signer)
-        //     }
+            if (maxAmountIn > 0n) 
+            {
+                await approveTokenTransaction(selectedToken0.Address, managerContractAddress, maxAmountIn, signer)
+            }
 
-        //     const swapParams = 
-        //     {
-        //         path,
-        //         recipient: await signer.getAddress(),
-        //         amountOut,
-        //         maxAmountIn
-        //     }
+            const swapParams = 
+            {
+                path,
+                recipient: await signer.getAddress(),
+                amountOut,
+                maxAmountIn
+            }
 
-        //     const managerSwap = await uniswapV3ManagerContract.swapExactOutput(swapParams)
-        //     const managerSwapTx = await managerSwap.wait()
+            const managerSwap = await uniswapV3ManagerContract.swapExactOutput(swapParams)
+            const managerSwapTx = await managerSwap.wait()
 
-        //     console.log("Exact output swap successful", managerSwapTx)
-        // } 
-        // catch (err) 
-        // {
-        //     console.log("Exact output swap failed", err)
-        // }
+            console.log("Exact output swap successful", managerSwapTx)
+        } 
+        catch (err) 
+        {
+            console.log("Exact output swap failed", err)
+        }
     }
 
     return (

@@ -448,6 +448,14 @@ export default function PositionDetails()
                     amount1: selectedPosition?.tokensOwed1
                 })
 
+                // Collect liquidity
+                // const collectFeeTx = await uniswapV3NFTManagerContract.collect
+                // ({
+                //     tokenId,
+                //     amount0: ethers.parseUnits("0.9", 18),
+                //     amount1: ethers.parseUnits("5341.249574724880255153", 18),
+                // })
+
                 console.log("Collect tx sent, waiting for confirmation...")
                 const collectFeeReceipt = await collectFeeTx.wait()
                 console.log(collectFeeReceipt)
