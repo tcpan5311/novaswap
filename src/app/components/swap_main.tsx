@@ -16,6 +16,7 @@ import { IconCoinFilled } from '@tabler/icons-react'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount, TickListDataProvider } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
+import { sqrtPToPriceNumber } from '../utils/compute_token_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -179,7 +180,7 @@ export default function SwapMain()
 
     useDebounceEffect(() => 
     {
-        if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 ||!provider) return
+        if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 || !provider) return
 
         if (activeInput === "swap1" && !swapValue1) 
         {
@@ -196,20 +197,24 @@ export default function SwapMain()
         {
             try 
             {
-                if (activeInput === "swap1" && swapValue1) 
-                {
-                    const path = ethers.solidityPacked(
+                const path = ethers.solidityPacked(
                     ["address", "uint24", "address"],
                     [selectedToken0.Address, 3000, selectedToken1.Address]
                 )
 
-                    const [amountOut] = await uniswapV3QuoterContract.quote.staticCall(path, ethers.parseUnits(swapValue1, 18))
-
-                    setSwapValue2(ethers.formatUnits(amountOut, 18))
+                if (activeInput === "swap1" && swapValue1) 
+                {
+                    const inputAmount = ethers.parseUnits(swapValue1, 18)
+                    const [calculatedOutput] = await uniswapV3QuoterContract.quoteExactInput.staticCall(path, inputAmount)
+                    setSwapValue1(swapValue1)
+                    setSwapValue2(ethers.formatUnits(calculatedOutput, 18))
                 } 
                 else if (activeInput === "swap2" && swapValue2) 
                 {
-                    setSwapValue1("10")
+                    const desiredOutput = ethers.parseUnits(swapValue2, 18)
+                    const [calculatedInput] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, desiredOutput)
+                    setSwapValue1(ethers.formatUnits(calculatedInput, 18))
+                    setSwapValue2(swapValue2)
                 }
             } 
             catch (err) 
@@ -222,6 +227,97 @@ export default function SwapMain()
 
         fetchQuote()
     }, [swapValue1, swapValue2, selectedToken0, selectedToken1, uniswapV3QuoterContract, activeInput], 500)
+
+
+    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: bigint, signer: ethers.Signer) => 
+    {
+        if (!tokenAddress) 
+        {
+            throw new Error("Token address is required in approveTokenTransaction")
+        }
+
+        const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
+        await approveTokenContract.approve(spenderAddress, amount)
+    }
+
+    const swapExactInput = async () => 
+    {
+        if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
+
+        try 
+        {
+            const inputAmount = ethers.parseEther(swapValue1)
+            const path = ethers.solidityPacked(["address", "uint24", "address"], [selectedToken0.Address, 3000, selectedToken1.Address])
+            const [calculatedOutput] = await uniswapV3QuoterContract.quoteExactInput.staticCall(path, inputAmount)
+            const slippageTolerance = 100n
+            const minAmountOut = calculatedOutput - (calculatedOutput * slippageTolerance / 10000n)
+
+            if (inputAmount > 0n) 
+            {
+                await approveTokenTransaction(selectedToken0.Address, managerContractAddress, inputAmount, signer)
+            }
+
+            const swapParams = {
+                path,
+                recipient: await signer.getAddress(),
+                amountIn: inputAmount,
+                minAmountOut: minAmountOut
+            }
+
+            const managerSwap = await uniswapV3ManagerContract.swapExactInput(swapParams)
+            const managerSwapTx = await managerSwap.wait()
+
+            setSwapValue1(ethers.formatUnits(inputAmount, 18))
+            setSwapValue2(ethers.formatUnits(calculatedOutput, 18))
+            console.log("Exact input swap successful", managerSwapTx)
+        } 
+        catch (err) 
+        {
+            console.log("Exact input swap failed", err)
+        }
+    }
+
+    const swapExactOutput = async () => 
+    {
+        console.log("Nono")
+        // if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
+
+        // try 
+        // {
+        //     const amountOut = ethers.parseEther(swapValue2)
+
+        //     const path = ethers.solidityPacked(
+        //         ["address", "uint24", "address"],
+        //         [selectedToken0.Address, 3000, selectedToken1.Address]
+        //     )
+
+        //     const [quotedInputAmount] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, amountOut)
+        //     const slippageTolerance = 100n
+        //     const maxAmountIn = quotedInputAmount + (quotedInputAmount * slippageTolerance / 10000n)
+
+        //     if (maxAmountIn > 0n) 
+        //     {
+        //         await approveTokenTransaction(selectedToken0.Address, managerContractAddress, maxAmountIn, signer)
+        //     }
+
+        //     const swapParams = 
+        //     {
+        //         path,
+        //         recipient: await signer.getAddress(),
+        //         amountOut,
+        //         maxAmountIn
+        //     }
+
+        //     const managerSwap = await uniswapV3ManagerContract.swapExactOutput(swapParams)
+        //     const managerSwapTx = await managerSwap.wait()
+
+        //     console.log("Exact output swap successful", managerSwapTx)
+        // } 
+        // catch (err) 
+        // {
+        //     console.log("Exact output swap failed", err)
+        // }
+    }
 
     return (
         <div className="bg-white mt-[5%] h-screen">
@@ -310,7 +406,23 @@ export default function SwapMain()
                                 />
 
                                 {isConnected ? (
-                                    <Button fullWidth radius="md" className= "mt-[10%]">Swap</Button>
+                                    <Button fullWidth radius="md" className= "mt-[10%]" 
+                                    onClick={() => 
+                                    {
+                                        if (activeInput === "swap1") 
+                                        {
+                                            swapExactInput()
+                                        } 
+                                        else if (activeInput === "swap2") 
+                                        {
+                                            swapExactOutput()
+                                        } 
+                                        else 
+                                        {
+                                            console.log("Please enter an amount first.")
+                                        }
+                                    }}
+                                    >Swap</Button>
                                 ):
                                 (
                                     <Button fullWidth radius="md" className= "mt-[10%]" onClick={connectWallet}>Connect Wallet</Button>
