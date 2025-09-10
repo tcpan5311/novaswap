@@ -198,8 +198,11 @@ export default function PositionDetails()
                     tickUpper: Number(extracted.upperTick)
                 })
 
-                const amount0 = positionEntity.amount0.toFixed()
-                const amount1 = positionEntity.amount1.toFixed()
+                const amount0Raw = positionEntity.amount0.quotient.toString() 
+                const amount1Raw = positionEntity.amount1.quotient.toString()
+
+                const amount0 = ethers.formatUnits(amount0Raw, decimals0)
+                const amount1 = ethers.formatUnits(amount1Raw, decimals1)
 
                 const positionData: PositionData = 
                 {
@@ -221,8 +224,8 @@ export default function PositionDetails()
                     feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
                     tokensOwed0: positionOnPool.tokensOwed0,
                     tokensOwed1: positionOnPool.tokensOwed1,
-                    token0Amount0: amount0,
-                    token1Amount1: amount1
+                    token0Amount0: BigInt(positionEntity.amount0.quotient.toString()),
+                    token1Amount1:  BigInt(positionEntity.amount1.quotient.toString())
                 }
 
                 console.log('single position:', positionData)
@@ -429,7 +432,7 @@ export default function PositionDetails()
                 const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract
                 const totalLiquidity = selectedPosition?.liquidity ?? 0n
 
-                const liquidityToRemove = (totalLiquidity * BigInt(percent?? 0)) / 100n
+                let liquidityToRemove = (totalLiquidity * BigInt(percent?? 0)) / 100n
 
                 const removeLiquidityTx = await uniswapV3NFTManagerContract.removeLiquidity
                 ({
@@ -441,27 +444,22 @@ export default function PositionDetails()
                 const removeLiquidityReceipt = await removeLiquidityTx.wait()
                 console.log(removeLiquidityReceipt)
 
+                let updatedPosition = await loadPositionDetails(tokenId)
+
                 const collectFeeTx = await uniswapV3NFTManagerContract.collect
                 ({
                     tokenId,
-                    amount0: selectedPosition?.tokensOwed0,
-                    amount1: selectedPosition?.tokensOwed1
+                    amount0: updatedPosition?.tokensOwed0,
+                    amount1: updatedPosition?.tokensOwed1
                 })
-
-                // Collect liquidity
-                // const collectFeeTx = await uniswapV3NFTManagerContract.collect
-                // ({
-                //     tokenId,
-                //     amount0: ethers.parseUnits("0.9", 18),
-                //     amount1: ethers.parseUnits("5341.249574724880255153", 18),
-                // })
 
                 console.log("Collect tx sent, waiting for confirmation...")
                 const collectFeeReceipt = await collectFeeTx.wait()
                 console.log(collectFeeReceipt)
 
                 console.log("Liquidity removed and tokens collected successfully.")
-                const updatedPosition = await loadPositionDetails(tokenId)
+
+                updatedPosition = await loadPositionDetails(tokenId)
                 if (updatedPosition) setSelectedPosition(updatedPosition)
 
                 if (percent === 100) 
@@ -660,7 +658,7 @@ export default function PositionDetails()
                                     </Grid.Col>
                                     <Grid.Col span={6}>
                                         <Text fw={700} size="md" c="black" ta="right">
-                                        {roundIfCloseToWhole(selectedPosition.token0Amount0)}
+                                        {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token0Amount0))}
                                         </Text>
                                     </Grid.Col>
 
@@ -674,7 +672,7 @@ export default function PositionDetails()
                                     </Grid.Col>
                                     <Grid.Col span={6}>
                                         <Text fw={700} size="md" c="black" ta="right">
-                                        {roundIfCloseToWhole(selectedPosition.token1Amount1)}
+                                        {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token1Amount1))}
                                         </Text>
                                     </Grid.Col>
                                 </Grid>
@@ -685,6 +683,38 @@ export default function PositionDetails()
                                 <Text fw={700} size="lg">Fees earned</Text>
                                 <Text mt={2}>$0</Text>
                                 <Text mt={1} size="sm" c="dimmed">You have no earnings yet</Text>
+
+                                    <Grid align="center" mt={20}>
+                                        <Grid.Col span={6}>
+                                            <Group gap="xs" align="center">
+                                            <IconCoinFilled size={30} color="purple" />
+                                            <Text fw={700} size="md" truncate  c="dimmed">
+                                                {selectedPosition.token0} position
+                                            </Text>
+                                            </Group>
+                                        </Grid.Col>
+                                        <Grid.Col span={6}>
+                                            <Text fw={700} size="md" c="black" ta="right">
+                                            {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.tokensOwed0))}
+                                            </Text>
+                                        </Grid.Col>
+
+                                        <Grid.Col span={6}>
+                                            <Group gap="xs" align="center">
+                                            <IconCoinFilled size={30} color="purple" />
+                                            <Text fw={700} size="md" truncate c="dimmed">
+                                                {selectedPosition.token1} position
+                                            </Text>
+                                            </Group>
+                                        </Grid.Col>
+                                        <Grid.Col span={6}>
+                                            <Text fw={700} size="md" c="black" ta="right">
+                                          {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.tokensOwed1))}
+                                            </Text>
+                                        </Grid.Col>
+                                    </Grid>
+
+                                
                             </Card>
 
                         </Grid.Col>
@@ -786,7 +816,7 @@ export default function PositionDetails()
                             {selectedPosition.token0}
                             </Text>
                             <Text fw={700} size="md"  c="purple">
-                            {roundIfCloseToWhole(selectedPosition.token0Amount0)}
+                            {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token0Amount0))}
                             </Text>
                         </Group>
 
@@ -795,7 +825,7 @@ export default function PositionDetails()
                             {selectedPosition.token1}
                             </Text>
                             <Text fw={700} size="md"  c="purple">
-                            {roundIfCloseToWhole(selectedPosition.token1Amount1)}
+                              {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token1Amount1))}
                             </Text>
                         </Group>
                     </Box>
@@ -833,7 +863,7 @@ export default function PositionDetails()
                         <Badge color="purple" ml={10}>
                             <Text>{selectedPosition.fee}</Text>
                         </Badge>
-
+                        
                         <Badge color={rangeColor} ml={10}>
                             {rangeStatus}
                         </Badge>
@@ -927,7 +957,7 @@ export default function PositionDetails()
                         {selectedPosition.token0}
                         </Text>
                         <Text fw={700} size="md"  c="purple">
-                        {roundIfCloseToWhole(selectedPosition.token0Amount0)}
+                        {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token0Amount0))}
                         </Text>
                     </Group>
 
@@ -936,7 +966,7 @@ export default function PositionDetails()
                         {selectedPosition.token1}
                         </Text>
                         <Text fw={700} size="md"  c="purple">
-                        {roundIfCloseToWhole(selectedPosition.token1Amount1)}
+                        {roundIfCloseToWhole(ethers.formatUnits(selectedPosition.token1Amount1))}
                         </Text>
                     </Group>
                     </Box>

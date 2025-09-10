@@ -24,8 +24,8 @@ export type PositionData =
   feeGrowthInside1LastX128: bigint
   tokensOwed0: bigint
   tokensOwed1: bigint
-  token0Amount0: string
-  token1Amount1: string
+  token0Amount0: bigint
+  token1Amount1: bigint
 }
 
 //Helper functions

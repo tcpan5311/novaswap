@@ -44,112 +44,121 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
     const [hovered, setHovered] = useState(-1)
     const viewportRef = useRef<HTMLDivElement>(null)
 
-    const loadPositions = async () => 
+  const loadPositions = async () => 
+  {
+    if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
     {
-      if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
+      const manager = contracts.UniswapV3NFTManagerContract
+      const address = await signer.getAddress()
+      const totalSupply: bigint = await manager.totalSupply()
+
+      const allPositions: PositionData[] = []
+
+      for (let tokenId = 0n; tokenId < totalSupply; tokenId++) 
       {
-        const manager = contracts.UniswapV3NFTManagerContract
-        const address = await signer.getAddress()
-        const totalSupply: bigint = await manager.totalSupply()
-
-        const allPositions: PositionData[] = []
-
-        for (let tokenId = 0n; tokenId < totalSupply; tokenId++) 
+        try 
         {
-          try 
-          {
-            const owner = await manager.ownerOf(tokenId)
-            if (owner.toLowerCase() !== address.toLowerCase()) continue
+          const owner = await manager.ownerOf(tokenId)
+          if (owner.toLowerCase() !== address.toLowerCase()) continue
 
-            const extracted = await manager.positions(tokenId)
-            const poolAddress = extracted.pool
+          const extracted = await manager.positions(tokenId)
+          const poolAddress = extracted.pool
 
-            const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-            const [token0Address, token1Address, feeRaw] = await Promise.all
-            ([
-              pool.token0(),
-              pool.token1(),
-              pool.fee()
-            ])
-            const fee = Number(feeRaw)
+          const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
+          const [token0Address, token1Address, feeRaw] = await Promise.all
+          ([
+            pool.token0(),
+            pool.token1(),
+            pool.fee()
+          ])
+          const fee = Number(feeRaw)
 
-            const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-            const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-            const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
-            ([
-              token0Contract.symbol(),
-              token1Contract.symbol(),
-              token0Contract.decimals(),
-              token1Contract.decimals()
-            ])
-            const slot0 = await pool.slot0()
-            const tick = Number(slot0.tick)
-            const sqrtPriceX96 = slot0.sqrtPriceX96
-            const price = sqrtPToPriceNumber(sqrtPriceX96)
+          const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+          const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+          const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
+          ([
+            token0Contract.symbol(),
+            token1Contract.symbol(),
+            token0Contract.decimals(),
+            token1Contract.decimals()
+          ])
+          
+          const slot0 = await pool.slot0()
+          const tick = Number(slot0.tick)
+          const sqrtPriceX96 = slot0.sqrtPriceX96
+          const price = sqrtPToPriceNumber(sqrtPriceX96)
 
-            const positionKey = ethers.keccak256
-            (
-              ethers.solidityPacked(
-                ['address', 'int24', 'int24'],
-                [manager.target, extracted.lowerTick, extracted.upperTick]
-              )
+          const positionKey = ethers.keccak256
+          (
+            ethers.solidityPacked(
+              ['address', 'int24', 'int24'],
+              [manager.target, extracted.lowerTick, extracted.upperTick]
             )
+          )
 
-            const positionOnPool = await pool.positions(positionKey)
+          const positionOnPool = await pool.positions(positionKey)
 
-            const liquidity = positionOnPool.liquidity.toString()
+          // Get the POOL's total liquidity, not position liquidity
+          const poolLiquidity = await pool.liquidity()
+          
+          // Position liquidity is separate
+          const positionLiquidity = positionOnPool.liquidity.toString()
 
-            const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
-            const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
+          const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
+          const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
 
-            const poolSdk = new Pool(token0, token1, fee, sqrtPriceX96.toString(), liquidity, tick)
+          // Use pool's total liquidity for Pool constructor
+          const poolSdk = new Pool(
+            token0, 
+            token1, 
+            fee, 
+            sqrtPriceX96.toString(), 
+            poolLiquidity.toString(), // ← Fixed: use pool liquidity
+            tick
+          )
 
-            const positionEntity = new Position
-            ({
-              pool: poolSdk,
-              liquidity: liquidity,
-              tickLower: Number(extracted.lowerTick),
-              tickUpper: Number(extracted.upperTick)
-            })
+          // Use position liquidity for Position constructor
+          const positionEntity = new Position
+          ({
+            pool: poolSdk,
+            liquidity: positionLiquidity, // ← This is correct
+            tickLower: Number(extracted.lowerTick),
+            tickUpper: Number(extracted.upperTick)
+          })
 
-            const amount0 = positionEntity.amount0.toFixed()
-            const amount1 = positionEntity.amount1.toFixed()
+          allPositions.push
+          ({
+            tokenId,
+            token0Address: token0Address,
+            token1Address: token1Address,
+            token0: symbol0,
+            token1: symbol1,
+            fee: fee,
+            pool: poolAddress,
+            tickLower: Number(extracted.lowerTick),
+            tickUpper: Number(extracted.upperTick),
+            minPrice: tickToPrice(Number(extracted.lowerTick)),
+            maxPrice: tickToPrice(Number(extracted.upperTick)),
+            currentTick: tick,
+            currentPrice: price,
+            liquidity: positionOnPool.liquidity, // ← This should be position liquidity
+            feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
+            feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
+            tokensOwed0: positionOnPool.tokensOwed0,
+            tokensOwed1: positionOnPool.tokensOwed1,
+            token0Amount0: BigInt(positionEntity.amount0.quotient.toString()),
+            token1Amount1:  BigInt(positionEntity.amount1.quotient.toString())
+          })
 
-            allPositions.push
-            ({
-              tokenId,
-              token0Address: token0Address,
-              token1Address: token1Address,
-              token0: symbol0,
-              token1: symbol1,
-              fee: fee,
-              pool: poolAddress,
-              tickLower: Number(extracted.lowerTick),
-              tickUpper: Number(extracted.upperTick),
-              minPrice: tickToPrice(Number(extracted.lowerTick)),
-              maxPrice: tickToPrice(Number(extracted.upperTick)),
-              currentTick: tick,
-              currentPrice: price,
-              liquidity: positionOnPool.liquidity,
-              feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
-              feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
-              tokensOwed0: positionOnPool.tokensOwed0,
-              tokensOwed1: positionOnPool.tokensOwed1,
-              token0Amount0: amount0,
-              token1Amount1: amount1
-            })
-          } 
-          catch (error) 
-          {
-            console.log(error)
-          }
+        } 
+        catch (error) 
+        {
+          console.log(error)
         }
-        setPositions(allPositions)
-        // const filteredPositions = allPositions.filter((pos) => !(Number(pos.token0Amount0) === 0 && Number(pos.token1Amount1) === 0))
-        // setPositions(filteredPositions)
-        console.log('all positions owned by signer:', filteredPositions)
       }
+      setPositions(allPositions)
     }
+  }
 
   useDebounceEffect(() => 
   {
@@ -286,7 +295,7 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
                   key={position.tokenId.toString()}
                   onClick={async () => 
                   {
-                      const token = await generateSignedToken(position.tokenId.toString(), position.token0Amount0, position.token1Amount1)
+                      const token = await generateSignedToken(position.tokenId.toString(), ethers.formatUnits(position.token0Amount0), ethers.formatUnits(position.token1Amount1))
                       if (token) 
                       {
                         router.push(`/position_main/position_details?token=${token}`);
@@ -312,7 +321,23 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
                     <Text size="sm">Max: {roundIfCloseToWhole(String(position.maxPrice))}</Text>
                     {/* <Text size="sm">Liquidity: {position.liquidity.toString()}</Text> */}
                     <Text size="sm">
-                    Tokens added: {roundIfCloseToWhole(position.token0Amount0)} {position.token0} / {roundIfCloseToWhole(position.token1Amount1)} {position.token1}
+                    Tokens added: {roundIfCloseToWhole(ethers.formatUnits(position.token0Amount0))} {position.token0} / {roundIfCloseToWhole(ethers.formatUnits(position.token1Amount1))} {position.token1}
+                    </Text>
+
+                    <Text size="sm">
+                    Tick Lower: {(position.tickLower.toString())}
+                    </Text>
+
+                    <Text size="sm">
+                    Tick Upper: {(position.tickUpper.toString())}
+                    </Text>
+
+                    <Text size="sm">
+                    Liquidity: {(position.liquidity.toString())}
+                    </Text>
+
+                    <Text size="sm">
+                    Fees earned: {roundIfCloseToWhole(ethers.formatUnits(position.tokensOwed0))} {position.token0} / {roundIfCloseToWhole(ethers.formatUnits(position.tokensOwed1))} {position.token1}
                     </Text>
                   </Card>
                 </UnstyledButton>

@@ -279,9 +279,6 @@ export default function PositionCreate()
                     tickUpper: Number(extracted.upperTick)
                 })
 
-                const amount0 = positionEntity.amount0.toFixed()
-                const amount1 = positionEntity.amount1.toFixed()
-
                 allPositions.push
                 ({
                     tokenId,
@@ -302,8 +299,8 @@ export default function PositionCreate()
                     feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
                     tokensOwed0: positionOnPool.tokensOwed0,
                     tokensOwed1: positionOnPool.tokensOwed1,
-                    token0Amount0: amount0,
-                    token1Amount1: amount1
+                    token0Amount0: BigInt(positionEntity.amount0.quotient.toString()),
+                    token1Amount1:  BigInt(positionEntity.amount1.quotient.toString())
                 })
                 } 
                 catch (error) 
