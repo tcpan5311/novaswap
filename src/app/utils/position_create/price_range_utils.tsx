@@ -1,5 +1,6 @@
 import { Dispatch, SetStateAction } from "react"
 const BUFFER_PERCENTAGE = 0.01
+const PRICE_STEP_PERCENTAGE = 0.01
 
 export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, maxPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMinPrice: (price: number) => void, setMinPriceInput: (input: string) => void) => 
 {
@@ -93,3 +94,53 @@ export const handleMaxPrice = async (currentPoolPrice: number, minPrice: number,
 
     return clamped!
 }
+
+export const handleMinClick = (direction: "increase" | "decrease", currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>, setMinPriceInput: Dispatch<SetStateAction<string>>) => 
+{
+    const minAllowedPrice = currentPoolPrice * 0.75
+    const dynamicBuffer = (maxPrice - minAllowedPrice) * BUFFER_PERCENTAGE
+
+    setMinPrice((prev) => 
+    {
+        const step = prev * PRICE_STEP_PERCENTAGE
+        let newPrice = direction === "increase" ? prev + step : prev - step
+
+        if (newPrice > maxPrice - dynamicBuffer) 
+        {
+            newPrice = maxPrice - dynamicBuffer
+        } 
+        else if (newPrice < minAllowedPrice) 
+        {
+            newPrice = minAllowedPrice
+        }
+
+        setMinPriceInput(newPrice.toFixed(18))
+        return newPrice
+    })
+}
+
+export const handleMaxClick = (direction: "increase" | "decrease", currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>, setMaxPriceInput: Dispatch<SetStateAction<string>>) => 
+{
+    const maxAllowedPrice = currentPoolPrice * 1.25
+    const dynamicBuffer = (maxAllowedPrice - minPrice) * BUFFER_PERCENTAGE
+
+    setMaxPrice((prev) => 
+    {
+        const step = prev * PRICE_STEP_PERCENTAGE
+        let newPrice = direction === "increase" ? prev + step : prev - step
+
+        if (newPrice < minPrice + dynamicBuffer) 
+        {
+            newPrice = minPrice + dynamicBuffer
+        } 
+        else if (newPrice > maxAllowedPrice) 
+        {
+            newPrice = maxAllowedPrice
+        }
+
+        setMaxPriceInput(newPrice.toFixed(18))
+        return newPrice
+    })
+}
+
+

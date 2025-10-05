@@ -13,7 +13,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
-import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice} from '../utils/position_create/price_range_utils'
+import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice, handleMinClick, handleMaxClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
 import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
@@ -332,7 +332,7 @@ export default function PositionCreate()
 
         const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
         {
-        await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
+            await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
         }
 
         const wrappedHandleMouseUp = () => 
@@ -361,6 +361,18 @@ export default function PositionCreate()
 
     attachListeners()
     }, [draggingType, isFirstStepValid, minPrice, maxPrice])
+
+    const handleMinPriceClick = async (direction: "increase" | "decrease") => 
+    {
+        const currentPrice = (await getCurrentPoolPrice()) ?? 0
+        handleMinClick(direction, currentPrice, maxPrice, setMinPrice, setMinPriceInput)
+    }
+
+    const handleMaxPriceClick = async (direction: "increase" | "decrease") => 
+    {
+        const currentPrice = (await getCurrentPoolPrice()) ?? 0
+        handleMaxClick(direction, currentPrice, minPrice, setMaxPrice, setMaxPriceInput)
+    }
 
     useDebounceEffect(() => 
     {
@@ -862,28 +874,19 @@ export default function PositionCreate()
         }
     }
 
-    const getTwapPrice = async (secondsAgo: number) => 
+    const getTwapPrice = async () => 
     {
-        const poolAddressTest = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
-        const poolContract = getPoolContract(poolAddressTest)
-
-        const secondsAgos = [secondsAgo, 0]
-        const { tickCumulatives } = await poolContract?.observe(secondsAgos)
-
-        const tickCumulativeDelta = tickCumulatives[1] - tickCumulatives[0]
-        const averageTick = Math.floor(tickCumulativeDelta / secondsAgo)
-
-        const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(averageTick).toString() // Returns a string
-        const sqrtPriceBigInt = BigInt(sqrtPriceX96)
-
-        const priceX192 = sqrtPriceBigInt * sqrtPriceBigInt
-        const price = priceX192 >> 192n // Shift right by 192 bits
-
-        console.log("TWAP Price:", price.toString())
-        return price
+        const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
+        const poolContract = getPoolContract(poolAddress)
+        
+        const secondsAgos = [65, 0]
+        const tickCumulatives = await poolContract?.observe(secondsAgos)
+        console.log(tickCumulatives)
+        const tickDifference = tickCumulatives[1] - tickCumulatives[0]
+        const averageTick = BigInt(tickDifference) / BigInt(secondsAgos[0])
+        console.log(tickToPrice(Number(averageTick)))
     }
     
-
     const quotePool = async () => 
     {   
 
@@ -943,23 +946,14 @@ export default function PositionCreate()
         <Box pos="relative">
             <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
             {/* Test function for quotePool and swapToken */}
-            {/* <Button
-            fullWidth
-            radius="md"
-            className="mt-[5%]"
-            onClick={() => quotePool()}
-            >
-            Test initial
-            </Button>
-
             <Button
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={swapToken}
+            onClick={() => getTwapPrice()}
             >
-            Test swap
-            </Button> */}
+            Test Twap
+            </Button>
 
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>
@@ -1336,11 +1330,15 @@ export default function PositionCreate()
                                                         </Box>
 
                                                         <Stack>
-                                                            <ActionIcon radius="xl">
-                                                                <IconPlus size={20} />
+                                                            <ActionIcon 
+                                                            radius="xl"
+                                                            onClick={() => handleMinPriceClick("increase")}>
+                                                            <IconPlus size={20} />
                                                             </ActionIcon>
-                                                            <ActionIcon radius="xl">
-                                                                <IconMinus size={20} />
+                                                            <ActionIcon 
+                                                            radius="xl"
+                                                            onClick={() => handleMinPriceClick("decrease")}>
+                                                            <IconMinus size={20} />
                                                             </ActionIcon>
                                                         </Stack>
                                                     </Flex>
@@ -1385,10 +1383,14 @@ export default function PositionCreate()
                                                         </Box>
 
                                                         <Stack>
-                                                            <ActionIcon radius="xl">
+                                                            <ActionIcon 
+                                                            radius="xl"
+                                                            onClick={() => handleMaxPriceClick("increase")}>
                                                                 <IconPlus size={20} />
                                                             </ActionIcon>
-                                                            <ActionIcon radius="xl">
+                                                            <ActionIcon 
+                                                            radius="xl"
+                                                            onClick={() => handleMaxPriceClick("decrease")}>
                                                                 <IconMinus size={20} />
                                                             </ActionIcon>
                                                         </Stack>
