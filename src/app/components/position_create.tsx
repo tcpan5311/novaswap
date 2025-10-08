@@ -15,9 +15,8 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice, handleMinClick, handleMaxClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
+import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep, validateSufficientToken} from '../utils/validator_utils'
 import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
-
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -164,6 +163,10 @@ export default function PositionCreate()
 
     const [isFirstStepValid, setIsFirstStepValid] = useState(false)
     const [isSecondStepValid, setIsSecondStepValid] = useState(false)
+    const [secondStepError, setSecondStepError] = useState<string>("")
+
+    const [token0Balance, setToken0Balance] = useState<string>("0")
+    const [token1Balance, setToken1Balance] = useState<string>("0")
 
     const [requireInitialPrice, setRequireInitialPrice] = useState<boolean | null>(null)
 
@@ -318,48 +321,49 @@ export default function PositionCreate()
     }, [signer, contracts, deploymentAddresses], 500)
     
 
-    useEffect(() => {
-    const attachListeners = async () => 
+    useEffect(() => 
     {
-        if (!isFirstStepValid) return
-        
-        let currentPrice = await getCurrentPoolPrice() ?? 0
-
-        const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
+        const attachListeners = async () => 
         {
-            await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice, setMinPriceInput)
+            if (!isFirstStepValid) return
+            
+            let currentPrice = await getCurrentPoolPrice() ?? 0
+
+            const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
+            {
+                await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice, setMinPriceInput)
+            }
+
+            const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
+            {
+                await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
+            }
+
+            const wrappedHandleMouseUp = () => 
+            {
+                handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
+            }
+
+            if (draggingType === "max") 
+            {
+                document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
+            } 
+            else if (draggingType === "min") 
+            {
+                document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
+            }
+
+            document.addEventListener("mouseup", wrappedHandleMouseUp as any)
+
+            return () => 
+            {
+                document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
+                document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
+                document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
+            }
         }
 
-        const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
-        {
-            await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
-        }
-
-        const wrappedHandleMouseUp = () => 
-        {
-            handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
-        }
-
-        if (draggingType === "max") 
-        {
-            document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-        } 
-        else if (draggingType === "min") 
-        {
-            document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
-        }
-
-        document.addEventListener("mouseup", wrappedHandleMouseUp as any)
-
-        return () => 
-        {
-            document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-            document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
-            document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
-        }
-    }
-
-    attachListeners()
+        attachListeners()
     }, [draggingType, isFirstStepValid, minPrice, maxPrice])
 
     const handleMinPriceClick = async (direction: "increase" | "decrease") => 
@@ -378,45 +382,49 @@ export default function PositionCreate()
     {
         const runAllUpdates = async () => 
         {
+            // Step 1: Basic validations
             if (!selectedToken0 || !selectedToken1 || !fee)
-            {
-                setIsFirstStepValid(false)
-                setRequireInitialPrice(false)
-                return  
-            } 
-
-            if (!validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee)) 
             {
                 setIsFirstStepValid(false)
                 setRequireInitialPrice(false)
                 return
             }
-            
-            const { isValid: firstStepValid, poolExists } = 
-                await validateFullFirstStep(
-                    selectedToken0.Address,
-                    selectedToken1.Address,
-                    fee,
-                    initialPrice,
-                    doesPoolExist
-                )
+
+            if (!validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee))
+            {
+                setIsFirstStepValid(false)
+                setRequireInitialPrice(false)
+                return
+            }
+
+            // Step 2: Full first step validation
+            const { isValid: firstStepValid, poolExists } = await validateFullFirstStep(
+                selectedToken0.Address,
+                selectedToken1.Address,
+                fee,
+                initialPrice,
+                doesPoolExist
+            )
 
             setIsFirstStepValid(firstStepValid)
             setRequireInitialPrice(!poolExists)
 
             if (!firstStepValid) return
 
-            if (!isFirstStepValid) return
-
+            // Step 3: Validate min and max prices
             await validateMinPrice()
             await validateMaxPrice()
 
-            let currentPrice = await getCurrentPoolPrice() ?? 0
+            // Step 4: Fetch balances
+            fetchBalances(selectedToken0.Address, selectedToken1.Address)
 
-            await handleTokenInputDisplay
-            (
-                selectedToken0.Address,  
-                selectedToken1.Address, 
+            // Step 5: Get current pool price
+            const currentPrice = await getCurrentPoolPrice() ?? 0
+
+            // Step 6: Update token display
+            await handleTokenInputDisplay(
+                selectedToken0.Address,
+                selectedToken1.Address,
                 fee,
                 minPrice,
                 maxPrice,
@@ -429,14 +437,15 @@ export default function PositionCreate()
                 uniswapV3FactoryContract,
                 getPoolContract
             )
-            
-            if (lastEditedField === "token0") 
+
+            // Step 7: Update token amounts based on last edited field
+            if (lastEditedField === "token0")
             {
                 await updateTokenAmounts(
                     true,
                     token0Amount,
-                    selectedToken0.Address,  
-                    selectedToken1.Address, 
+                    selectedToken0.Address,
+                    selectedToken1.Address,
                     fee,
                     minPrice,
                     maxPrice,
@@ -454,14 +463,13 @@ export default function PositionCreate()
                 )
             }
 
-            if (lastEditedField === "token1") 
+            if (lastEditedField === "token1")
             {
-                await updateTokenAmounts
-                (
+                await updateTokenAmounts(
                     false,
                     token1Amount,
-                    selectedToken0.Address,  
-                    selectedToken1.Address, 
+                    selectedToken0.Address,
+                    selectedToken1.Address,
                     fee,
                     minPrice,
                     maxPrice,
@@ -479,7 +487,8 @@ export default function PositionCreate()
                 )
             }
 
-            const secondStepValid = await validateSecondStep(
+            // Step 8: Second step validation
+            const { isValid, errorMessage } = await validateSecondStep(
                 provider,
                 signer,
                 selectedToken0.Address,
@@ -492,9 +501,12 @@ export default function PositionCreate()
                 currentPrice,
                 computeTokenAmount,
                 uniswapV3FactoryContract,
-                getPoolContract
+                getPoolContract,
+                (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider)
             )
-            setIsSecondStepValid(secondStepValid)
+
+            setIsSecondStepValid(isValid)
+            setSecondStepError(errorMessage || "")
         }
 
         runAllUpdates()
@@ -514,6 +526,7 @@ export default function PositionCreate()
         lastEditedField,
         isFirstStepValid 
     ], 500)
+
 
     const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
     {
@@ -728,6 +741,45 @@ export default function PositionCreate()
         const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
         const parsedAmount = ethers.parseEther(amount)
         await approveTokenContract.approve(spenderAddress, parsedAmount)
+    }
+
+    const fetchBalances = async (token0Address: string | null, token1Address: string | null) => 
+    {
+        if (!signer) return
+
+        try 
+        {
+            const signerAddress = await signer.getAddress() 
+
+            let balance0 = "0"
+            let displayBalance0 = "0"
+
+            if (token0Address) 
+            {
+                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+                const rawBalance0 = await token0Contract.balanceOf(signerAddress) 
+                const symbol0 = await token0Contract.symbol()
+                balance0 = ethers.formatEther(rawBalance0)
+                displayBalance0 = `${balance0} ${symbol0}`
+            }
+            setToken0Balance(displayBalance0)
+
+            let balance1 = "0"
+            let displayBalance1 = "0"
+            if (token1Address) 
+            {
+                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+                const rawBalance1 = await token1Contract.balanceOf(signerAddress) 
+                const symbol1 = await token1Contract.symbol()
+                balance1 = ethers.formatEther(rawBalance1)
+                displayBalance1 = `${balance1} ${symbol1}`
+            }
+            setToken1Balance(displayBalance1)
+        } 
+        catch (err) 
+        {
+            console.log("Failed to fetch token balances:")
+        }
     }
 
     const findMatchingPosition = async (token0Address: string, token1Address: string, fee: number, lowerTick: number, upperTick: number, loadPositions: () => Promise<PositionData[]>): Promise<{ tokenId: bigint; position: PositionData } | null> => 
@@ -953,6 +1005,15 @@ export default function PositionCreate()
             onClick={() => getTwapPrice()}
             >
             Test Twap
+            </Button>
+
+            <Button
+            fullWidth
+            radius="md"
+            className="mt-[5%]"
+            onClick={() => validateSufficientToken(provider, signer, selectedToken0!.Address, selectedToken1!.Address, token0Amount, token1Amount,  (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))}
+            >
+            Validate Sufficient Token
             </Button>
 
             <Grid ml={200} mt={50}>
@@ -1420,16 +1481,23 @@ export default function PositionCreate()
                                                 }}
                                                 rightSection=
                                                 {
-                                                    <Group align="center">
-                                                        <Text>
-                                                        {tokenSelection.displayToken0Name} 
-                                                        </Text>
+                                                    <Stack gap={0} align="start">
+                                                        <Group align="center">
+                                                        <Text>{tokenSelection.displayToken0Name}</Text>
                                                         <ActionIcon radius="xl">
-                                                        <IconCoinFilled size={40} />
+                                                            <IconCoinFilled size={40} />
                                                         </ActionIcon>
-                                                    </Group>
+                                                        </Group>
+                                                        <Text size="sm" c="dimmed" mt={5}>
+                                                        {token0Balance}
+                                                        </Text>
+                                                    </Stack>
                                                 }
                                                 rightSectionWidth={200}
+                                                classNames=
+                                                {{
+                                                    input: "h-[90px] w-full text-2xl px-4 rounded-2xl"
+                                                }}
                                                 />
                                             </>
 
@@ -1453,16 +1521,23 @@ export default function PositionCreate()
                                                 }}
                                                 rightSection=
                                                 {
-                                                    <Group align="center">
-                                                        <Text>
-                                                        {tokenSelection.displayToken1Name} 
-                                                        </Text>
+                                                    <Stack gap={0} align="start">
+                                                        <Group align="center">
+                                                        <Text>{tokenSelection.displayToken1Name}</Text>
                                                         <ActionIcon radius="xl">
-                                                        <IconCoinFilled size={40} />
+                                                            <IconCoinFilled size={40} />
                                                         </ActionIcon>
-                                                    </Group>
+                                                        </Group>
+                                                        <Text size="sm" c="dimmed" mt={5}>
+                                                        {token1Balance} 
+                                                        </Text>
+                                                    </Stack>
                                                 }
                                                 rightSectionWidth={200}
+                                                classNames=
+                                                {{
+                                                    input: "h-[90px] w-full text-2xl px-4 rounded-2xl"
+                                                }}
                                             />
                                             </>
 
@@ -1476,10 +1551,11 @@ export default function PositionCreate()
                                             disabled={!isSecondStepValid}
                                             onClick={addLiquidity}
                                         >
-                                            {
-                                                isSecondStepValid
-                                                ? 'Continue'
-                                                : 'Incomplete fields'
+                                            {isSecondStepValid
+                                                ? "Continue"
+                                                : secondStepError === "insufficient_tokens"
+                                                ? "Insufficient tokens"
+                                                : "Incomplete fields"
                                             }
                                         </Button>
                                         ) : (
