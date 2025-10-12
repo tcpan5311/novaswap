@@ -1,7 +1,7 @@
 "use client"
 import { useEffect } from 'react'
 import { MantineProvider} from '@mantine/core'
-import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea } from '@mantine/core'
+import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
 // import { useForm } from '@mantine/form'
 import { useDisclosure } from '@mantine/hooks'
 import classes from "../../../css_modules/swapmain.module.css"
@@ -17,6 +17,7 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { sqrtPToPriceNumber } from '../utils/compute_token_utils'
+import { validateSwapStep } from '../utils/validator_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
 
@@ -109,6 +110,15 @@ export default function SwapMain()
     
     const [swapValue1, setSwapValue1] = useState('')
     const [swapValue2, setSwapValue2] = useState('')
+
+    const [hasLiquidity, setHasLiquidity] = useState(false)
+
+    const [isSwapValid, setIsSwapValid] = useState(false)
+    const [swapValidError, setSwapValidError] = useState<"incomplete_fields" | "insufficient_tokens" | null>(null)
+
+    const [token0Balance, setToken0Balance] = useState<string>("0")
+    const [token1Balance, setToken1Balance] = useState<string>("0")
+
     const [selectedTab, setSelectedTab] = useState('Swap')
     const isSmallScreen = useMediaQuery('(max-width: 768px)')
 
@@ -197,6 +207,8 @@ export default function SwapMain()
         {
             try 
             {
+                setHasLiquidity(true)
+
                 const path = ethers.solidityPacked(
                     ["address", "uint24", "address"],
                     [selectedToken0.Address, 3000, selectedToken1.Address]
@@ -220,6 +232,7 @@ export default function SwapMain()
             catch (err) 
             {
                 console.log(err)
+                setHasLiquidity(false) 
                 if (activeInput === "swap1") setSwapValue2("")
                 else if (activeInput === "swap2") setSwapValue1("")
             }
@@ -227,7 +240,29 @@ export default function SwapMain()
 
         fetchQuote()
     }, [swapValue1, swapValue2, selectedToken0, selectedToken1, uniswapV3QuoterContract, activeInput], 500)
+    
+    useEffect(() => 
+    {
+        const updateTokenBalance = async() =>
+        {
+            if (!selectedToken0?.Address && !selectedToken1?.Address) return
+            await fetchBalances(selectedToken0?.Address ?? null, selectedToken1?.Address ?? null)
+        }
 
+        const validateSwap = async () => 
+        {
+            if (!provider || !signer) return
+            if (!selectedToken0?.Address || !selectedToken1?.Address) return
+
+            const result = await validateSwapStep(provider, signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
+
+            setIsSwapValid(result.isValid)
+            setSwapValidError(result.error ?? null)
+        }
+
+        validateSwap()
+        updateTokenBalance()
+    }, [provider, signer, selectedToken0, selectedToken1, swapValue1, swapValue2])
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: bigint, signer: ethers.Signer) => 
     {
@@ -238,6 +273,52 @@ export default function SwapMain()
 
         const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
         await approveTokenContract.approve(spenderAddress, amount)
+    }
+
+    const fetchBalances = async (token0Address: string | null, token1Address: string | null) => 
+    {
+        if (!signer) return
+
+        try 
+        {
+            const signerAddress = await signer.getAddress()
+
+            if (token0Address) 
+            {
+                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+                const [rawBalance0, symbol0, decimals0] = await Promise.all([
+                    token0Contract.balanceOf(signerAddress),
+                    token0Contract.symbol(),
+                    token0Contract.decimals()
+                ])
+                const balance0 = ethers.formatUnits(rawBalance0, decimals0)
+                setToken0Balance(`${balance0} ${symbol0}`)
+            } 
+            else 
+            {
+                setToken0Balance("0")
+            }
+
+            if (token1Address) 
+            {
+                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+                const [rawBalance1, symbol1, decimals1] = await Promise.all([
+                    token1Contract.balanceOf(signerAddress),
+                    token1Contract.symbol(),
+                    token1Contract.decimals()
+                ])
+                const balance1 = ethers.formatUnits(rawBalance1, decimals1)
+                setToken1Balance(`${balance1} ${symbol1}`)
+            } 
+            else 
+            {
+                setToken1Balance("0")
+            }
+        } 
+        catch (err) 
+        {
+            console.error("Failed to fetch token balances:", err)
+        }
     }
 
     const swapExactInput = async () => 
@@ -322,7 +403,7 @@ export default function SwapMain()
         <div className="bg-white mt-[5%] h-screen">
             <Grid justify={isSmallScreen ? "flex-start ml-10" : "center"} align="center">
             
-                <Grid.Col span="auto" className="w-[450px] min-w-[450px] max-w-[450px] md:ml-4">
+                <Grid.Col span="auto" className="w-[500px] min-w-[500px] max-w-[500px] md:ml-4">
                     <Group>
                     {['Swap', 'Limit', 'Send'].map((label) => 
                     (
@@ -351,18 +432,33 @@ export default function SwapMain()
                             <>
                                 <Textarea
                                 size='xl'
-                                classNames= {{description: classes.swap_text_area}}
+                                classNames= 
+                                {{
+                                    description: classes.swap_text_area,
+                                    input: "h-[110px] w-full text-2xl px-4 rounded-2xl"
+                                }}
                                 value={swapValue1}
                                 onChange={(event) => handleSwap1Change(event.currentTarget.value)}
                                 description="Sell"
                                 placeholder="0"
                                 rightSection=
                                 {
-                                    <Button radius="xl" onClick={open1} leftSection={<IconCoinFilled size={17} />}>
-                                        {selectedToken0 ? selectedToken0.Label : "Select Token"}
-                                    </Button>
+                                    <Stack gap="xs" align="start">
+                                        <Button size="sm" radius="xl" onClick={open1} leftSection={<IconCoinFilled size={17} />}>
+                                            <Group align='center'>
+                                                {selectedToken0 ? selectedToken0.Label : "Select Token"}
+                                            </Group>
+                                        </Button>
+
+                                        {selectedToken0 && 
+                                        (
+                                            <Text size="sm" c="dimmed">
+                                            {token0Balance}
+                                            </Text>
+                                        )}
+                                    </Stack>
                                 }
-                                rightSectionWidth={145}
+                                rightSectionWidth={200}
                                 />
 
                                 <ActionIcon 
@@ -388,24 +484,38 @@ export default function SwapMain()
 
                                 <Textarea
                                 size='xl'
-                                classNames= {{description: classes.swap_text_area}}
+                                classNames= 
+                                {{
+                                    description: classes.swap_text_area,
+                                    input: "h-[110px] w-full text-2xl px-4 rounded-2xl"
+                                }}
                                 value={swapValue2}
                                 onChange={(event) => handleSwap2Change(event.currentTarget.value)}
                                 description="Buy"
                                 placeholder="0"
                                 rightSection=
                                 {
-                                    <Button size="sm" radius="xl" onClick={open2} leftSection={<IconCoinFilled size={17} />}>
-                                        <Group align='center'>
-                                            {selectedToken1 ? selectedToken1.Label : "Select Token"}
-                                        </Group>
-                                    </Button>
+                                    <Stack gap="xs" align="start">
+                                        <Button size="sm" radius="xl" onClick={open2} leftSection={<IconCoinFilled size={17} />}>
+                                            <Group align='center'>
+                                                {selectedToken1 ? selectedToken1.Label : "Select Token"}
+                                            </Group>
+                                        </Button>
+
+                                        {selectedToken1 && 
+                                        (
+                                            <Text size="sm" c="dimmed">
+                                            {token1Balance}
+                                            </Text>
+                                        )}
+                                    </Stack>
                                 }
-                                rightSectionWidth={145}
+                                rightSectionWidth={200}
                                 />
 
                                 {isConnected ? (
                                     <Button fullWidth radius="md" className= "mt-[10%]" 
+                                    disabled={!isSwapValid || !hasLiquidity}
                                     onClick={() => 
                                     {
                                         if (activeInput === "swap1") 
@@ -421,7 +531,16 @@ export default function SwapMain()
                                             console.log("Please enter an amount first.")
                                         }
                                     }}
-                                    >Swap</Button>
+                                    >    
+                                    {!isSwapValid
+                                    ? swapValidError === "insufficient_tokens"
+                                        ? "Insufficient tokens"
+                                        : "Incomplete fields"
+                                    : !hasLiquidity
+                                        ? "Insufficient liquidity"
+                                        : "Swap"
+                                    }
+                                    </Button>
                                 ):
                                 (
                                     <Button fullWidth radius="md" className= "mt-[10%]" onClick={connectWallet}>Connect Wallet</Button>

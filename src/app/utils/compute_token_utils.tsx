@@ -156,8 +156,26 @@ export const computeTokenAmount = async (
     }
 
     const buffer = 0.0001
-    const tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
-    const tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
+    let tickLower: number
+    let tickUpper: number
+    
+    if (minPrice <= tickToPrice(TickMath.MIN_TICK)) 
+    {
+        tickLower = nearestUsableTick(TickMath.MIN_TICK, 60)
+    } 
+    else 
+    {
+        tickLower = nearestUsableTick(priceToTick(minPrice - buffer), 60)
+    }
+
+    if (maxPrice >= tickToPrice(TickMath.MAX_TICK)) 
+    {
+        tickUpper = nearestUsableTick(TickMath.MAX_TICK, 60)
+    } 
+    else 
+    {
+        tickUpper = nearestUsableTick(priceToTick(maxPrice + buffer), 60)
+    }
 
     const getAmount = (amountStr: string, token: Token, decimals: number) => CurrencyAmount.fromRawAmount(token, ethers.parseUnits(amountStr, decimals).toString())
 

@@ -15,7 +15,7 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice, handleMinClick, handleMaxClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep, validateSufficientToken} from '../utils/validator_utils'
+import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
 import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
@@ -145,6 +145,8 @@ export default function PositionCreate()
 
     //For setting liquidity price range
     let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
+
+    const [rangeType, setRangeType] = useState<"full_range" | "custom_range">("full_range")
 
     const [initialPrice, setInitialPrice] = useState(0)
     const [initialPriceInput, setInitialPriceInput] = useState<string>(initialPrice.toString())
@@ -411,9 +413,13 @@ export default function PositionCreate()
 
             if (!firstStepValid) return
 
+            
             // Step 3: Validate min and max prices
-            await validateMinPrice()
-            await validateMaxPrice()
+            if (rangeType === "custom_range") 
+            {
+                await validateMinPrice()
+                await validateMaxPrice()
+            }
 
             // Step 4: Fetch balances
             fetchBalances(selectedToken0.Address, selectedToken1.Address)
@@ -421,13 +427,27 @@ export default function PositionCreate()
             // Step 5: Get current pool price
             const currentPrice = await getCurrentPoolPrice() ?? 0
 
+            let effectiveMinPrice: number
+            let effectiveMaxPrice: number
+            
+            if (rangeType === "full_range") 
+            {
+                effectiveMinPrice = tickToPrice(TickMath.MIN_TICK)
+                effectiveMaxPrice = tickToPrice(TickMath.MAX_TICK)
+            } 
+            else 
+            {
+                effectiveMinPrice = minPrice
+                effectiveMaxPrice = maxPrice
+            }
+
             // Step 6: Update token display
             await handleTokenInputDisplay(
                 selectedToken0.Address,
                 selectedToken1.Address,
                 fee,
-                minPrice,
-                maxPrice,
+                effectiveMinPrice,
+                effectiveMaxPrice,
                 currentPrice,
                 computeTokenAmount,
                 setHideToken0DuringChange,
@@ -447,8 +467,8 @@ export default function PositionCreate()
                     selectedToken0.Address,
                     selectedToken1.Address,
                     fee,
-                    minPrice,
-                    maxPrice,
+                    effectiveMinPrice,
+                    effectiveMaxPrice,
                     currentPrice,
                     computeTokenAmount,
                     setToken0Amount,
@@ -471,8 +491,8 @@ export default function PositionCreate()
                     selectedToken0.Address,
                     selectedToken1.Address,
                     fee,
-                    minPrice,
-                    maxPrice,
+                    effectiveMinPrice,
+                    effectiveMaxPrice,
                     currentPrice,
                     computeTokenAmount,
                     setToken0Amount,
@@ -494,8 +514,8 @@ export default function PositionCreate()
                 selectedToken0.Address,
                 selectedToken1.Address,
                 fee,
-                minPrice,
-                maxPrice,
+                effectiveMinPrice,
+                effectiveMaxPrice,
                 token0Amount,
                 token1Amount,
                 currentPrice,
@@ -524,7 +544,8 @@ export default function PositionCreate()
         token0Amount,
         token1Amount,
         lastEditedField,
-        isFirstStepValid 
+        isFirstStepValid,
+        rangeType 
     ], 500)
 
 
@@ -863,8 +884,8 @@ export default function PositionCreate()
                     await approveTokenTransaction(token1.Address, nftManagerContractAddress, token1Amount, signer)
                 }
 
-                const lowerTick = nearestUsableTick(priceToTick(minPrice), 60)
-                const upperTick = nearestUsableTick(priceToTick(maxPrice), 60)
+                const lowerTick = rangeType === "full_range" ? -887272 : nearestUsableTick(priceToTick(minPrice), 60)
+                const upperTick = rangeType === "full_range" ? 887272 : nearestUsableTick(priceToTick(maxPrice), 60)
 
                 const matching = await findMatchingPosition
                 (
@@ -1011,7 +1032,6 @@ export default function PositionCreate()
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={() => validateSufficientToken(provider, signer, selectedToken0!.Address, selectedToken1!.Address, token0Amount, token1Amount,  (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))}
             >
             Validate Sufficient Token
             </Button>
@@ -1255,324 +1275,463 @@ export default function PositionCreate()
 
                             <Card shadow="sm" padding="lg" radius="md" mt={10} withBorder>
                             <Text size="lg" fw={600} c="#4f0099" mb={20}>Set price range</Text>
-                            <Tabs color="grape" variant="pills" radius="xl" defaultValue="custom_range" c="#4f0099">
-                                <Tabs.List justify='center' grow>
-                                    <Tabs.Tab value="full_range">
-                                    Full range
-                                    </Tabs.Tab>
-                                    <Tabs.Tab value="custom_range">
-                                    Custom range
-                                    </Tabs.Tab>
+                                <Tabs
+                                color="grape"
+                                variant="pills"
+                                radius="xl"
+                                defaultValue="full_range"
+                                c="#4f0099"
+                                onChange={(value) => {
+                                    const rangeType = value as "full_range" | "custom_range";
+                                    setRangeType(rangeType);
+                                }}
+                                >
+                                <Tabs.List justify="center" grow>
+                                    <Tabs.Tab value="full_range">Full range</Tabs.Tab>
+                                    <Tabs.Tab value="custom_range">Custom range</Tabs.Tab>
                                 </Tabs.List>
 
-                                <Tabs.Panel value="full_range" mt={20}>
-                                    Full Range
+                                <Tabs.Panel value="full_range">
+                                    <div className="relative select-none" ref={chartRef}>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <LineChart data={data}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis domain={[graphMinPrice, graphMaxPrice]} />
+                                        <Tooltip />
+                                        <ReferenceArea
+                                            y1={graphMinPrice}
+                                            y2={graphMaxPrice}
+                                            fill="purple"
+                                            fillOpacity={0.1}
+                                        />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="Price"
+                                            stroke="purple"
+                                            strokeWidth={3}
+                                        />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                    </div>
+
+                                    <Grid gutter="md" mt={15}>
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                        <Flex justify="space-between" align="center">
+                                            <Box>
+                                            <Text c="#4f0099" size="sm" fw={700}>
+                                                Min price
+                                            </Text>
+                                            <Input
+                                                c="#4f0099"
+                                                variant="unstyled"
+                                                size="xl"
+                                                value="0"
+                                                readOnly
+                                            />
+                                            <Text c="#4f0099" size="sm">
+                                                NEAR per ETH
+                                            </Text>
+                                            </Box>
+                                        </Flex>
+                                        </Card>
+                                    </Grid.Col>
+
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                        <Flex justify="space-between" align="center">
+                                            <Box>
+                                            <Text c="#4f0099" size="sm" fw={700}>
+                                                Max price
+                                            </Text>
+                                            <Input
+                                                c="#4f0099"
+                                                variant="unstyled"
+                                                size="xl"
+                                                value="∞"
+                                                readOnly
+                                            />
+                                            <Text c="#4f0099" size="sm">
+                                                NEAR per ETH
+                                            </Text>
+                                            </Box>
+                                        </Flex>
+                                        </Card>
+                                    </Grid.Col>
+                                    </Grid>
+
+                                    <Text size="lg" fw={600} c="#4f0099" mt={30}>
+                                    Deposit tokens
+                                    </Text>
+                                    <Text mt={10} size="sm" c="gray">
+                                    Specify the token amounts for your liquidity contribution.
+                                    </Text>
+
+                                    {!hideToken0DuringChange && (
+                                    <Input
+                                        mt={20}
+                                        size="xl"
+                                        placeholder="0"
+                                        value={token0Amount}
+                                        onChange={async (event) => {
+                                        const input = event.currentTarget.value;
+                                        if (/^\d*\.?\d*$/.test(input)) {
+                                            setToken0Amount(input);
+                                            setLastEditedField("token0");
+                                        }
+                                        }}
+                                        rightSection={
+                                        <Stack gap={0} align="start">
+                                            <Group align="center">
+                                            <Text>{tokenSelection.displayToken0Name}</Text>
+                                            <ActionIcon radius="xl">
+                                                <IconCoinFilled size={40} />
+                                            </ActionIcon>
+                                            </Group>
+                                            <Text size="sm" c="dimmed" mt={5}>
+                                            {token0Balance}
+                                            </Text>
+                                        </Stack>
+                                        }
+                                        rightSectionWidth={200}
+                                        classNames={{
+                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
+                                        }}
+                                    />
+                                    )}
+
+                                    {!hideToken1DuringChange && (
+                                    <Input
+                                        mt={20}
+                                        size="xl"
+                                        placeholder="0"
+                                        value={token1Amount}
+                                        onChange={async (event) => {
+                                        const input = event.currentTarget.value;
+                                        if (/^\d*\.?\d*$/.test(input)) {
+                                            setToken1Amount(input);
+                                            setLastEditedField("token1");
+                                        }
+                                        }}
+                                        rightSection={
+                                        <Stack gap={0} align="start">
+                                            <Group align="center">
+                                            <Text>{tokenSelection.displayToken1Name}</Text>
+                                            <ActionIcon radius="xl">
+                                                <IconCoinFilled size={40} />
+                                            </ActionIcon>
+                                            </Group>
+                                            <Text size="sm" c="dimmed" mt={5}>
+                                            {token1Balance}
+                                            </Text>
+                                        </Stack>
+                                        }
+                                        rightSectionWidth={200}
+                                        classNames={{
+                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
+                                        }}
+                                    />
+                                    )}
+
+                                    {isConnected ? (
+                                    <Button
+                                        fullWidth
+                                        radius="md"
+                                        className="mt-[5%]"
+                                        disabled={!isSecondStepValid}
+                                        onClick={addLiquidity}
+                                    >
+                                        {isSecondStepValid
+                                        ? "Continue"
+                                        : secondStepError === "insufficient_tokens"
+                                        ? "Insufficient tokens"
+                                        : "Incomplete fields"}
+                                    </Button>
+                                    ) : (
+                                    <Button
+                                        fullWidth
+                                        radius="md"
+                                        className="mt-[5%]"
+                                        onClick={connectWallet}
+                                    >
+                                        Connect Wallet
+                                    </Button>
+                                    )}
                                 </Tabs.Panel>
 
-                                <Tabs.Panel value="custom_range" mt={20}>
-                                <>
-                                        <div className="relative select-none" ref={chartRef}>
-                                                <ResponsiveContainer width="100%" height={300}>
-                                                    <LineChart data={data}>
-                                                        <CartesianGrid strokeDasharray="3 3" />
-                                                        <XAxis dataKey="date" />
-                                                        <YAxis domain={[graphMinPrice, graphMaxPrice]} />
-                                                        <Tooltip />
-
-                                                        <ReferenceArea
-                                                        y1={minPrice}
-                                                        y2={maxPrice}
-                                                        fill="purple"
-                                                        fillOpacity={0.1}
-                                                        />
-
-                                                        <ReferenceLine
-                                                        y={minPrice}
-                                                        stroke="red"
-                                                        strokeWidth={5}
-                                                        label={({ viewBox }) => 
-                                                        (   
-                                                            <g>
-                                                                <rect
-                                                                x={viewBox.x + viewBox.x * 3.1}
-                                                                y={viewBox.y - 6}
-                                                                width="40"
-                                                                height="10"
-                                                                fill="purple"
-                                                                onMouseDown={() => setDraggingType("min")}
-                                                                cursor="ns-resize"
-                                                                >
-                                                                </rect>
-
-                                                                <text
-                                                                x={viewBox.x + viewBox.x * 2.9}
-                                                                y={viewBox.y + 20}
-                                                                fill='purple'
-                                                                fontSize='11px'
-                                                                fontWeight="bold"
-                                                                >
-                                                                {`Min: ${minPrice.toPrecision(8)}`}
-                                                                </text>
-                                                            </g>
-                                                        )}
-                                                        />
-                                                        <ReferenceLine
-                                                        y={maxPrice}
-                                                        stroke="green"
-                                                        strokeWidth={5}
-                                                        label={({ viewBox }) => 
-                                                        (
-                                                            <g>
-                                                                <rect
-                                                                x={viewBox.x + viewBox.x * 3.1}
-                                                                y={viewBox.y - 6}
-                                                                width="40"
-                                                                height="10"
-                                                                fill="purple"
-                                                                onMouseDown={() => setDraggingType("max")}
-                                                                cursor="ns-resize"
-                                                                >
-                                                                </rect>
-
-                                                                <text
-                                                                x={viewBox.x + viewBox.x * 2.9}
-                                                                y={viewBox.y - 20}
-                                                                fontSize='11px'
-                                                                fill='purple'
-                                                                fontWeight="bold"
-                                                                >
-                                                                {`Max: ${maxPrice.toPrecision(8)}`}
-                                                                </text>
-                                                            </g>
-                                                        )}
-                                                        />
-
-                                                        <Line type="monotone" dataKey="Price" stroke="purple" strokeWidth={3} />
-                                                    </LineChart>
-                                                </ResponsiveContainer>
-                                        </div>
-
-                                        <Grid gutter="md" mt={15}>
-                                            <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
-                                                <Card shadow="sm" padding="lg" radius="md" withBorder>
-                                                    <Flex justify="space-between" align="center">
-                                                        <Box>
-                                                            <Text c="#4f0099" size="sm" fw={700}>Min price</Text>
-                                                            <Input
-                                                            c="#4f0099"
-                                                            variant="unstyled"
-                                                            size="xl"
-                                                            value={minPriceInput}
-                                                            onChange={(event) => 
-                                                            {
-                                                                const priceInputRegex = /^\d*\.?\d{0,4}$/
-                                                                const input = event.target.value
-
-                                                                if (input === '') 
-                                                                {
-                                                                    setMinPriceInput('')
-                                                                    setMinPrice(0)
-                                                                    return
-                                                                }
-
-                                                                if (priceInputRegex.test(input)) 
-                                                                {
-                                                                    setMinPriceInput(input)
-
-                                                                    const parsedInput = validatePriceInput(input, 18)
-                                                                    if (parsedInput !== null) 
-                                                                    {
-                                                                        setMinPrice(parsedInput)
-                                                                    }
-                                                                }
-                                                            }}
-                                                            />
-                                                            <Text c="#4f0099" size="sm">NEAR per ETH</Text>
-                                                        </Box>
-
-                                                        <Stack>
-                                                            <ActionIcon 
-                                                            radius="xl"
-                                                            onClick={() => handleMinPriceClick("increase")}>
-                                                            <IconPlus size={20} />
-                                                            </ActionIcon>
-                                                            <ActionIcon 
-                                                            radius="xl"
-                                                            onClick={() => handleMinPriceClick("decrease")}>
-                                                            <IconMinus size={20} />
-                                                            </ActionIcon>
-                                                        </Stack>
-                                                    </Flex>
-                                                </Card>
-                                            </Grid.Col>
-
-                                            <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
-                                                <Card shadow="sm" padding="lg" radius="md" withBorder>
-                                                    <Flex justify="space-between" align="center">
-                                                        <Box>
-                                                            <Text c="#4f0099" size="sm" fw={700}>Max price</Text>
-                                                            <Input
-                                                            c="#4f0099"
-                                                            variant="unstyled"
-                                                            size="xl"
-                                                            value={maxPriceInput}
-                                                            onChange={(event) => 
-                                                            {
-                                                                const priceInputRegex = /^\d*\.?\d{0,4}$/
-                                                                const input = event.target.value
-
-                                                                if (input === '') 
-                                                                {
-                                                                    setMaxPriceInput('')
-                                                                    setMaxPrice(0)
-                                                                    return
-                                                                }
-
-                                                                if (priceInputRegex.test(input)) 
-                                                                {
-                                                                    setMaxPriceInput(input)
-
-                                                                    const parsedInput = validatePriceInput(input, 18)
-                                                                    if (parsedInput !== null) 
-                                                                    {
-                                                                        setMaxPrice(parsedInput)
-                                                                    }
-                                                                }
-                                                            }}
-                                                            />
-                                                            <Text c="#4f0099" size="sm">NEAR per ETH</Text>
-                                                        </Box>
-
-                                                        <Stack>
-                                                            <ActionIcon 
-                                                            radius="xl"
-                                                            onClick={() => handleMaxPriceClick("increase")}>
-                                                                <IconPlus size={20} />
-                                                            </ActionIcon>
-                                                            <ActionIcon 
-                                                            radius="xl"
-                                                            onClick={() => handleMaxPriceClick("decrease")}>
-                                                                <IconMinus size={20} />
-                                                            </ActionIcon>
-                                                        </Stack>
-                                                    </Flex>
-                                                </Card>
-                                            </Grid.Col>
-                                        </Grid>
-
-                                        <Text size="lg" fw={600} c="#4f0099" mt={30}>Deposit tokens</Text>
-                                        <Text mt={10} size="sm" c="gray">Specify the token amounts for your liquidity contribution.</Text>
-                                        
-                                        {!hideToken0DuringChange && (
-                                            <>
-                                                <Input
-                                                mt={20}
-                                                size="xl"
-                                                placeholder="0"
-                                                value={token0Amount}
-                                                onChange={async (event) => 
-                                                {
-                                                    const input = event.currentTarget.value
-                                                    if (/^\d*\.?\d*$/.test(input)) 
-                                                    {
-                                                        setToken0Amount(input)
-                                                        setLastEditedField("token0")
-                                                    }
-                                                }}
-                                                rightSection=
-                                                {
-                                                    <Stack gap={0} align="start">
-                                                        <Group align="center">
-                                                        <Text>{tokenSelection.displayToken0Name}</Text>
-                                                        <ActionIcon radius="xl">
-                                                            <IconCoinFilled size={40} />
-                                                        </ActionIcon>
-                                                        </Group>
-                                                        <Text size="sm" c="dimmed" mt={5}>
-                                                        {token0Balance}
-                                                        </Text>
-                                                    </Stack>
-                                                }
-                                                rightSectionWidth={200}
-                                                classNames=
-                                                {{
-                                                    input: "h-[90px] w-full text-2xl px-4 rounded-2xl"
-                                                }}
+                                <Tabs.Panel value="custom_range">
+                                    <div className="relative select-none" ref={chartRef}>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <LineChart data={data}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis domain={[graphMinPrice, graphMaxPrice]} />
+                                        <Tooltip />
+                                        <ReferenceArea
+                                            y1={Math.min(minPrice, maxPrice)}
+                                            y2={Math.max(minPrice, maxPrice)}
+                                            fill="purple"
+                                            fillOpacity={0.1}
+                                        />
+                                        <ReferenceLine
+                                            y={minPrice}
+                                            stroke="red"
+                                            strokeWidth={5}
+                                            label={({ viewBox }) => (
+                                            <g>
+                                                <rect
+                                                x={viewBox.width / 2 - 20}
+                                                y={viewBox.y - 5}
+                                                width="40"
+                                                height="10"
+                                                fill="purple"
+                                                onMouseDown={() => setDraggingType("min")}
+                                                cursor="ns-resize"
                                                 />
-                                            </>
+                                                <text
+                                                x={viewBox.width / 2 - 15}
+                                                y={viewBox.y - 10}
+                                                fill="purple"
+                                                fontSize="11px"
+                                                fontWeight="bold"
+                                                >
+                                                {`Min: ${minPrice.toPrecision(8)}`}
+                                                </text>
+                                            </g>
+                                            )}
+                                        />
+                                        <ReferenceLine
+                                            y={maxPrice}
+                                            stroke="green"
+                                            strokeWidth={5}
+                                            label={({ viewBox }) => (
+                                            <g>
+                                                <rect
+                                                x={viewBox.width / 2 - 20}
+                                                y={viewBox.y - 5}
+                                                width="40"
+                                                height="10"
+                                                fill="purple"
+                                                onMouseDown={() => setDraggingType("max")}
+                                                cursor="ns-resize"
+                                                />
+                                                <text
+                                                x={viewBox.width / 2 - 15}
+                                                y={viewBox.y - 15}
+                                                fontSize="11px"
+                                                fill="purple"
+                                                fontWeight="bold"
+                                                >
+                                                {`Max: ${maxPrice.toPrecision(8)}`}
+                                                </text>
+                                            </g>
+                                            )}
+                                        />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="Price"
+                                            stroke="purple"
+                                            strokeWidth={3}
+                                        />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                    </div>
 
-                                        )}
-
-                                        {!hideToken1DuringChange && (
-                                            <>
-                                                <Input
-                                                mt={20}
+                                    <Grid gutter="md" mt={15}>
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                        <Flex justify="space-between" align="center">
+                                            <Box>
+                                            <Text c="#4f0099" size="sm" fw={700}>
+                                                Min price
+                                            </Text>
+                                            <Input
+                                                c="#4f0099"
+                                                variant="unstyled"
                                                 size="xl"
-                                                placeholder="0"
-                                                value={token1Amount}
-                                                onChange={async (event) => 
-                                                {
-                                                    const input = event.currentTarget.value;
-                                                    if (/^\d*\.?\d*$/.test(input)) 
-                                                    {
-                                                        setToken1Amount(input)
-                                                        setLastEditedField("token1")
-                                                    }
-                                                }}
-                                                rightSection=
-                                                {
-                                                    <Stack gap={0} align="start">
-                                                        <Group align="center">
-                                                        <Text>{tokenSelection.displayToken1Name}</Text>
-                                                        <ActionIcon radius="xl">
-                                                            <IconCoinFilled size={40} />
-                                                        </ActionIcon>
-                                                        </Group>
-                                                        <Text size="sm" c="dimmed" mt={5}>
-                                                        {token1Balance} 
-                                                        </Text>
-                                                    </Stack>
+                                                value={minPriceInput}
+                                                onChange={(event) => {
+                                                const priceInputRegex = /^\d*\.?\d{0,4}$/;
+                                                const input = event.target.value;
+                                                if (input === "") {
+                                                    setMinPriceInput("");
+                                                    setMinPrice(0);
+                                                    return;
                                                 }
-                                                rightSectionWidth={200}
-                                                classNames=
-                                                {{
-                                                    input: "h-[90px] w-full text-2xl px-4 rounded-2xl"
+                                                if (priceInputRegex.test(input)) {
+                                                    setMinPriceInput(input);
+                                                    const parsedInput = validatePriceInput(input, 18);
+                                                    if (parsedInput !== null) {
+                                                    setMinPrice(parsedInput);
+                                                    }
+                                                }
                                                 }}
                                             />
-                                            </>
+                                            <Text c="#4f0099" size="sm">
+                                                NEAR per ETH
+                                            </Text>
+                                            </Box>
 
-                                        )}
+                                            <Stack>
+                                            <ActionIcon radius="xl" onClick={() => handleMinPriceClick("increase")}>
+                                                <IconPlus size={20} />
+                                            </ActionIcon>
+                                            <ActionIcon radius="xl" onClick={() => handleMinPriceClick("decrease")}>
+                                                <IconMinus size={20} />
+                                            </ActionIcon>
+                                            </Stack>
+                                        </Flex>
+                                        </Card>
+                                    </Grid.Col>
 
-                                        {isConnected ? (
-                                        <Button
-                                            fullWidth
-                                            radius="md"
-                                            className="mt-[5%]"
-                                            disabled={!isSecondStepValid}
-                                            onClick={addLiquidity}
-                                        >
-                                            {isSecondStepValid
-                                                ? "Continue"
-                                                : secondStepError === "insufficient_tokens"
-                                                ? "Insufficient tokens"
-                                                : "Incomplete fields"
-                                            }
-                                        </Button>
-                                        ) : (
-                                        <Button
-                                            fullWidth
-                                            radius="md"
-                                            className="mt-[5%]"
-                                            onClick={connectWallet}
-                                        >
-                                            Connect Wallet
-                                        </Button>
-                                        )}
+                                    <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
+                                        <Card shadow="sm" padding="lg" radius="md" withBorder>
+                                        <Flex justify="space-between" align="center">
+                                            <Box>
+                                            <Text c="#4f0099" size="sm" fw={700}>
+                                                Max price
+                                            </Text>
+                                            <Input
+                                                c="#4f0099"
+                                                variant="unstyled"
+                                                size="xl"
+                                                value={maxPriceInput}
+                                                onChange={(event) => {
+                                                const priceInputRegex = /^\d*\.?\d{0,4}$/;
+                                                const input = event.target.value;
+                                                if (input === "") {
+                                                    setMaxPriceInput("");
+                                                    setMaxPrice(0);
+                                                    return;
+                                                }
+                                                if (priceInputRegex.test(input)) {
+                                                    setMaxPriceInput(input);
+                                                    const parsedInput = validatePriceInput(input, 18);
+                                                    if (parsedInput !== null) {
+                                                    setMaxPrice(parsedInput);
+                                                    }
+                                                }
+                                                }}
+                                            />
+                                            <Text c="#4f0099" size="sm">
+                                                NEAR per ETH
+                                            </Text>
+                                            </Box>
 
-                                </>
+                                            <Stack>
+                                            <ActionIcon radius="xl" onClick={() => handleMaxPriceClick("increase")}>
+                                                <IconPlus size={20} />
+                                            </ActionIcon>
+                                            <ActionIcon radius="xl" onClick={() => handleMaxPriceClick("decrease")}>
+                                                <IconMinus size={20} />
+                                            </ActionIcon>
+                                            </Stack>
+                                        </Flex>
+                                        </Card>
+                                    </Grid.Col>
+                                    </Grid>
+
+                                    <Text size="lg" fw={600} c="#4f0099" mt={30}>
+                                    Deposit tokens
+                                    </Text>
+                                    <Text mt={10} size="sm" c="gray">
+                                    Specify the token amounts for your liquidity contribution.
+                                    </Text>
+
+                                    {!hideToken0DuringChange && (
+                                    <Input
+                                        mt={20}
+                                        size="xl"
+                                        placeholder="0"
+                                        value={token0Amount}
+                                        onChange={async (event) => {
+                                        const input = event.currentTarget.value;
+                                        if (/^\d*\.?\d*$/.test(input)) {
+                                            setToken0Amount(input);
+                                            setLastEditedField("token0");
+                                        }
+                                        }}
+                                        rightSection={
+                                        <Stack gap={0} align="start">
+                                            <Group align="center">
+                                            <Text>{tokenSelection.displayToken0Name}</Text>
+                                            <ActionIcon radius="xl">
+                                                <IconCoinFilled size={40} />
+                                            </ActionIcon>
+                                            </Group>
+                                            <Text size="sm" c="dimmed" mt={5}>
+                                            {token0Balance}
+                                            </Text>
+                                        </Stack>
+                                        }
+                                        rightSectionWidth={200}
+                                        classNames={{
+                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
+                                        }}
+                                    />
+                                    )}
+
+                                    {!hideToken1DuringChange && (
+                                    <Input
+                                        mt={20}
+                                        size="xl"
+                                        placeholder="0"
+                                        value={token1Amount}
+                                        onChange={async (event) => {
+                                        const input = event.currentTarget.value;
+                                        if (/^\d*\.?\d*$/.test(input)) {
+                                            setToken1Amount(input);
+                                            setLastEditedField("token1");
+                                        }
+                                        }}
+                                        rightSection={
+                                        <Stack gap={0} align="start">
+                                            <Group align="center">
+                                            <Text>{tokenSelection.displayToken1Name}</Text>
+                                            <ActionIcon radius="xl">
+                                                <IconCoinFilled size={40} />
+                                            </ActionIcon>
+                                            </Group>
+                                            <Text size="sm" c="dimmed" mt={5}>
+                                            {token1Balance}
+                                            </Text>
+                                        </Stack>
+                                        }
+                                        rightSectionWidth={200}
+                                        classNames={{
+                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
+                                        }}
+                                    />
+                                    )}
+
+                                    {isConnected ? (
+                                    <Button
+                                        fullWidth
+                                        radius="md"
+                                        className="mt-[5%]"
+                                        disabled={!isSecondStepValid}
+                                        onClick={addLiquidity}
+                                    >
+                                        {isSecondStepValid
+                                        ? "Continue"
+                                        : secondStepError === "insufficient_tokens"
+                                        ? "Insufficient tokens"
+                                        : "Incomplete fields"}
+                                    </Button>
+                                    ) : (
+                                    <Button
+                                        fullWidth
+                                        radius="md"
+                                        className="mt-[5%]"
+                                        onClick={connectWallet}
+                                    >
+                                        Connect Wallet
+                                    </Button>
+                                    )}
                                 </Tabs.Panel>
+                                </Tabs>
 
-                            </Tabs>
                             </Card>
 
                         </Box>
