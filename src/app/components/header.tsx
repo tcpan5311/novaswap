@@ -1,17 +1,13 @@
 "use client"
-
-import { MantineProvider, Autocomplete, Burger, Group, Button, Text, Popover } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
-import { IconBrandSupernova } from '@tabler/icons-react'
+import { useDispatch, useSelector } from "react-redux"
+import {connectWallet, disconnectWallet, initializeMetaMaskSDK, fetchDeploymentData,} from "../redux/blockchain_slice"
+import { blockchainSelector } from '../redux/blockchain_selectors'
+import type { AppDispatch } from "../redux/store"
+import { Group, Button, Text, Popover } from '@mantine/core'
 import React from 'react'
-import { MetaMaskSDK } from "@metamask/sdk"
-import { ethers } from "ethers"
-import { useState, useEffect, useRef } from 'react'
-import { IconWallet, IconSettingsCheck, IconPlugConnectedX } from '@tabler/icons-react'
+import { useEffect } from 'react'
+import { IconWallet, IconSettingsCheck, IconPlugConnectedX, IconBrandSupernova } from '@tabler/icons-react'
 import { useRouter } from "next/navigation"
-import { UseBlockchain } from '../context/blockchain_context'
-
-
 
 const links = 
 [
@@ -23,16 +19,19 @@ const links =
 export default function Header() 
 {   
     const router = useRouter()
-    const {account, isConnected, connectWallet, disconnectWallet} = UseBlockchain()
+    const dispatch = useDispatch<AppDispatch>()
+    const { account, isConnected } = useSelector(blockchainSelector)
 
     useEffect(() => 
-    {        
-    }, []);
-
-    const HandleNavigation = (path: string) => 
     {
-        router.push(path);
-    }
+        dispatch(initializeMetaMaskSDK())
+        if (isConnected) 
+        {
+        dispatch(fetchDeploymentData())
+        }
+    }, [isConnected, dispatch])
+
+    const handleNavigation = (path: string) => router.push(path)
 
     const items = links.map((link) => 
     (
@@ -42,7 +41,7 @@ export default function Header()
         key={link.label}
         component="span"
         className="cursor-pointer"
-        onClick={() => HandleNavigation(link.link)}
+        onClick={() => handleNavigation(link.link)}
         >
         {link.label}
       </Text>
@@ -75,7 +74,7 @@ export default function Header()
                         <Button 
                         className="!bg-black !text-white hover:!bg-black hover:!text-white"
                         rightSection={<IconWallet size={24}/>} 
-                        onClick={connectWallet}
+                        onClick={() => dispatch(connectWallet())}
                         >
                         Connect Wallet
                         </Button>
@@ -95,7 +94,7 @@ export default function Header()
                             <Button 
                             className="!bg-black !text-white hover:!bg-black hover:!text-white" 
                             rightSection={<IconPlugConnectedX size={24}/>} 
-                            onClick={disconnectWallet}
+                            onClick={() => dispatch(disconnectWallet())}
                             >
                             Disconnect
                             </Button>

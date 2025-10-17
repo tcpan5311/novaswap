@@ -1,6 +1,9 @@
 "use client"
+import { useSelector, useDispatch } from 'react-redux'
+import type { AppDispatch } from "../redux/store"
+import { blockchainSelector } from '../redux/blockchain_selectors'
 import { useEffect, useState, useRef } from 'react'
-import { UseBlockchain } from '../context/blockchain_context'
+import { connectWallet, loadBlockchainPositions } from '../redux/blockchain_slice'
 import { Button, Group, Box, Text, Flex, Card, Table, TextInput, UnstyledButton, Badge, ScrollArea } from '@mantine/core'
 import { IconPlus, IconComet } from '@tabler/icons-react'
 import { useRouter } from "next/navigation"
@@ -37,133 +40,19 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 
   export default function PositionMain() 
   {
-    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
-    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
-    const [positions, setPositions] = useState<PositionData[]>([])
+    const dispatch = useDispatch<AppDispatch>()
+    const { signer, contracts, positions: Positions } = useSelector(blockchainSelector)
     const [query, setQuery] = useState('')
     const [hovered, setHovered] = useState(-1)
     const viewportRef = useRef<HTMLDivElement>(null)
 
-  const loadPositions = async () => 
-  {
-    if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
-    {
-      const manager = contracts.UniswapV3NFTManagerContract
-      const address = await signer.getAddress()
-      const totalSupply: bigint = await manager.totalSupply()
-
-      const allPositions: PositionData[] = []
-
-      for (let tokenId = 0n; tokenId < totalSupply; tokenId++) 
-      {
-        try 
-        {
-          const owner = await manager.ownerOf(tokenId)
-          if (owner.toLowerCase() !== address.toLowerCase()) continue
-
-          const extracted = await manager.positions(tokenId)
-          const poolAddress = extracted.pool
-
-          const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-          const [token0Address, token1Address, feeRaw] = await Promise.all
-          ([
-            pool.token0(),
-            pool.token1(),
-            pool.fee()
-          ])
-          const fee = Number(feeRaw)
-
-          const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-          const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-          const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
-          ([
-            token0Contract.symbol(),
-            token1Contract.symbol(),
-            token0Contract.decimals(),
-            token1Contract.decimals()
-          ])
-          
-          const slot0 = await pool.slot0()
-          const tick = Number(slot0.tick)
-          const sqrtPriceX96 = slot0.sqrtPriceX96
-          const price = sqrtPToPriceNumber(sqrtPriceX96)
-
-          const positionKey = ethers.keccak256
-          (
-            ethers.solidityPacked(
-              ['address', 'int24', 'int24'],
-              [manager.target, extracted.lowerTick, extracted.upperTick]
-            )
-          )
-
-          const positionOnPool = await pool.positions(positionKey)
-
-          // Get the POOL's total liquidity, not position liquidity
-          const poolLiquidity = await pool.liquidity()
-          
-          // Position liquidity is separate
-          const positionLiquidity = positionOnPool.liquidity.toString()
-
-          const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
-          const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
-
-          // Use pool's total liquidity for Pool constructor
-          const poolSdk = new Pool(
-            token0, 
-            token1, 
-            fee, 
-            sqrtPriceX96.toString(), 
-            poolLiquidity.toString(), // ← Fixed: use pool liquidity
-            tick
-          )
-
-          // Use position liquidity for Position constructor
-          const positionEntity = new Position
-          ({
-            pool: poolSdk,
-            liquidity: positionLiquidity, // ← This is correct
-            tickLower: Number(extracted.lowerTick),
-            tickUpper: Number(extracted.upperTick)
-          })
-
-          allPositions.push
-          ({
-            tokenId,
-            token0Address: token0Address,
-            token1Address: token1Address,
-            token0: symbol0,
-            token1: symbol1,
-            fee: fee,
-            pool: poolAddress,
-            tickLower: Number(extracted.lowerTick),
-            tickUpper: Number(extracted.upperTick),
-            minPrice: tickToPrice(Number(extracted.lowerTick)),
-            maxPrice: tickToPrice(Number(extracted.upperTick)),
-            currentTick: tick,
-            currentPrice: price,
-            liquidity: positionOnPool.liquidity, // ← This should be position liquidity
-            feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
-            feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
-            tokensOwed0: positionOnPool.tokensOwed0,
-            tokensOwed1: positionOnPool.tokensOwed1,
-            token0Amount0: BigInt(positionEntity.amount0.quotient.toString()),
-            token1Amount1:  BigInt(positionEntity.amount1.quotient.toString())
-          })
-
-        } 
-        catch (error) 
-        {
-          console.log(error)
-        }
-      }
-      setPositions(allPositions)
-    }
-  }
-
   useDebounceEffect(() => 
   {
-    loadPositions()
-  }, [signer, contracts, deploymentAddresses], 500)
+    if (signer && contracts) 
+    {
+      dispatch(loadBlockchainPositions())
+    }
+  }, [signer, contracts, dispatch], 500)
 
   const getRangeStatus = (tick: number, tickLower: number, tickUpper: number) => 
   {
@@ -210,13 +99,13 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
       </Table.Tr>
   ))
 
-  const filteredPositions = positions.filter((position) => 
+  const filteredPositions = Positions?.filter((position) => 
   {
     const pair = `${position.token0}/${position.token1}`.toLowerCase()
     return pair.includes(query.toLowerCase()) || 
           position.token0.toLowerCase().includes(query.toLowerCase()) || 
           position.token1.toLowerCase().includes(query.toLowerCase())
-  })
+  }) ?? []
   
   return (
 

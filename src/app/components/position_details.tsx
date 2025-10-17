@@ -1,10 +1,13 @@
 "use client"
+import { useSelector, useDispatch } from "react-redux"
+import type { AppDispatch } from "../redux/store"
+import { blockchainSelector } from '../redux/blockchain_selectors'
+import { getPoolContract, connectWallet } from '../redux/blockchain_slice'
 import { useState, useEffect } from 'react'
 import { Grid, Tabs, Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
-import { UseBlockchain } from '../context/blockchain_context'
 import { ethers, isAddress } from 'ethers'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
@@ -83,7 +86,8 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 
 export default function PositionDetails() 
 {
-    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
+    const dispatch = useDispatch<AppDispatch>()
+    const { account, provider, signer, isConnected, deploymentAddresses, contracts } = useSelector(blockchainSelector)
 
     const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
@@ -266,7 +270,7 @@ export default function PositionDetails()
             provider,
             signer,
             uniswapV3FactoryContract,
-            getPoolContract
+            (address: string) => getPoolContract(signer, address) 
         )
         
         if (lastEditedField === "token0") 
@@ -289,7 +293,7 @@ export default function PositionDetails()
             provider,
             signer,
             uniswapV3FactoryContract,
-            getPoolContract
+            (address: string) => getPoolContract(signer, address) 
             )
         }
         if (lastEditedField === "token1") 
@@ -313,7 +317,7 @@ export default function PositionDetails()
                 provider,
                 signer,
                 uniswapV3FactoryContract,
-                getPoolContract
+                (address: string) => getPoolContract(signer, address) 
             )
         }
     }

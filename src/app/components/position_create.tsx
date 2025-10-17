@@ -1,14 +1,15 @@
 "use client"
+import { useSelector, useDispatch } from "react-redux"
+import type { AppDispatch } from "../redux/store"
+import { blockchainSelector } from '../redux/blockchain_selectors'
+import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions} from "../redux/blockchain_slice"
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select, Badge} from '@mantine/core'
-// import { LineChart } from '@mantine/charts'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
 import { IconPlus, IconMinus, IconCoinFilled, IconChevronDown, IconSearch, IconPercentage, IconChevronUp, IconTagPlus } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
-import JSBI from 'jsbi'
 import { ethers, isAddress } from 'ethers'
 import { useRouter } from 'next/navigation'
-import { UseBlockchain } from '../context/blockchain_context'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
@@ -17,8 +18,6 @@ import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, h
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
 import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
-
-let cryptocurrencies: CryptocurrencyDetail[] = []
 
 const feeStructure = 
 [
@@ -88,31 +87,17 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
     
 export default function PositionCreate() 
 {
+    const dispatch = useDispatch<AppDispatch>()
+    const { provider, signer, isConnected, deploymentAddresses, contracts, cryptocurrencies } = useSelector(blockchainSelector)
+
     const router = useRouter()
     const viewportRef = useRef<HTMLDivElement>(null)
     const [query, setQuery] = useState('')
-    const filtered = cryptocurrencies.filter(item => item.Label.toLowerCase().includes(query.toLowerCase()))
+    const filtered = (cryptocurrencies ?? []).filter(item => item.Label.toLowerCase().includes(query.toLowerCase()))
     const [hovered, setHovered] = useState(-1)
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
     const [fee, setFee] = useState<number | null>(null)
-    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
-
-    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
-    const [usdcContractAddress, setUsdcContractAddress] = useState("")
-    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
-    const [factoryContractAddress, setFactoryContractAddress] = useState('')
-    const [managerContractAddress, setManagerContractAddress] = useState('')
-    const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
-    const [quoterContractAddress, setQuoterContractAddress] = useState('')
-
-    const [ethereumContract, setEthereumContract] = useState<ethers.Contract | null>(null)
-    const [usdcContract, setUsdcContract] = useState<ethers.Contract | null>(null)
-    const [uniswapContract, setUniswapContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3ManagerContract, setUniswapV3ManagerContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3QuoterContract, setUniswapV3QuoterContract] = useState<ethers.Contract | null>(null)
 
     const links = 
     [
@@ -180,146 +165,9 @@ export default function PositionCreate()
 
     const [tokenSelection, setTokenSelection] = useState({displayToken0Name: '', displayToken1Name: '', displayFee: 0})
 
-    const loadData = async () => 
-    {
-        if (signer && deploymentAddresses && contracts) 
-        {
-            setEthereumContractAddress(deploymentAddresses?.EthereumAddress ?? "")
-            setUsdcContractAddress(deploymentAddresses?.USDCAddress ?? "")
-            setUniswapContractAddress(deploymentAddresses?.UniswapAddress ?? "")
-            setFactoryContractAddress(deploymentAddresses?.UniswapV3FactoryAddress ?? "")
-            setManagerContractAddress(deploymentAddresses?.UniswapV3ManagerAddress ?? "")
-            setNftManagerContractAddress(deploymentAddresses?.UniswapV3NFTManagerAddress ?? "")
-            setQuoterContractAddress(deploymentAddresses?.UniswapV3QuoterAddress ?? "")
-
-            setEthereumContract(contracts?.EthereumContract ?? null)
-            setUsdcContract(contracts?.USDCContract ?? null)
-            setUniswapContract(contracts?.UniswapContract ?? null)
-            setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
-            setUniswapV3ManagerContract(contracts?.UniswapV3ManagerContract ?? null)
-            setUniswapV3NFTManagerContract(contracts?.UniswapV3NFTManagerContract ?? null)
-            setUniswapV3QuoterContract(contracts?.UniswapV3QuoterContract ?? null)
-
-            const [ethereumName, ethereumSymbol, usdcName, usdcSymbol, uniswapName, uniswapSymbol] = 
-            await Promise.all
-            ([
-                contracts.EthereumContract?.name(), contracts.EthereumContract?.symbol(),
-                contracts.USDCContract?.name(), contracts.USDCContract?.symbol(),
-                contracts.UniswapContract?.name(), contracts.UniswapContract?.symbol()
-            ])
-
-            cryptocurrencies = 
-            [
-                { Label: `${ethereumName} (${ethereumSymbol})`, Address: deploymentAddresses?.EthereumAddress ?? "" },
-                { Label: `${usdcName} (${usdcSymbol})`, Address: deploymentAddresses?.USDCAddress ?? "" },
-                { Label: `${uniswapName} (${uniswapSymbol})`, Address: deploymentAddresses?.UniswapAddress ?? "" },
-            ]
-        }
-    }
-
-    const loadPositions = async (): Promise<PositionData[]> => 
-    {
-        const allPositions: PositionData[] = []
-        if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract) 
-        {
-            const manager = contracts.UniswapV3NFTManagerContract
-            const address = await signer.getAddress()
-            const totalSupply: bigint = await manager.totalSupply()
-
-            for (let tokenId = 0n; tokenId < totalSupply; tokenId++) 
-            {
-                try 
-                {
-                const owner = await manager.ownerOf(tokenId)
-                if (owner.toLowerCase() !== address.toLowerCase()) continue
-
-                const extracted = await manager.positions(tokenId)
-                const poolAddress = extracted.pool
-
-                const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-                const [token0Address, token1Address, feeRaw] = await Promise.all
-                ([
-                    pool.token0(),
-                    pool.token1(),
-                    pool.fee()
-                ])
-                const fee = Number(feeRaw)
-
-                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-                const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
-                ([
-                    token0Contract.symbol(),
-                    token1Contract.symbol(),
-                    token0Contract.decimals(),
-                    token1Contract.decimals()
-                ])
-                const slot0 = await pool.slot0()
-                const tick = Number(slot0.tick)
-                const sqrtPriceX96 = slot0.sqrtPriceX96
-                const price = sqrtPToPriceNumber(sqrtPriceX96)
-
-                const positionKey = ethers.keccak256
-                (
-                    ethers.solidityPacked(
-                    ['address', 'int24', 'int24'],
-                    [manager.target, extracted.lowerTick, extracted.upperTick]
-                    )
-                )
-
-                const positionOnPool = await pool.positions(positionKey)
-
-                const liquidity = positionOnPool.liquidity.toString()
-
-                const token0 = new Token(1, token0Address, Number(decimals0), symbol0)
-                const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
-
-                const poolSdk = new Pool(token0, token1, fee, sqrtPriceX96.toString(), liquidity, tick)
-
-                const positionEntity = new Position
-                ({
-                    pool: poolSdk,
-                    liquidity: liquidity,
-                    tickLower: Number(extracted.lowerTick),
-                    tickUpper: Number(extracted.upperTick)
-                })
-
-                allPositions.push
-                ({
-                    tokenId,
-                    token0Address: token0Address,
-                    token1Address: token1Address,
-                    token0: symbol0,
-                    token1: symbol1,
-                    fee: fee,
-                    pool: poolAddress,
-                    tickLower: Number(extracted.lowerTick),
-                    tickUpper: Number(extracted.upperTick),
-                    minPrice: tickToPrice(Number(extracted.lowerTick)),
-                    maxPrice: tickToPrice(Number(extracted.upperTick)),
-                    currentTick: tick,
-                    currentPrice: price,
-                    liquidity: positionOnPool.liquidity,
-                    feeGrowthInside0LastX128: positionOnPool.feeGrowthInside0LastX128,
-                    feeGrowthInside1LastX128: positionOnPool.feeGrowthInside1LastX128,
-                    tokensOwed0: positionOnPool.tokensOwed0,
-                    tokensOwed1: positionOnPool.tokensOwed1,
-                    token0Amount0: BigInt(positionEntity.amount0.quotient.toString()),
-                    token1Amount1:  BigInt(positionEntity.amount1.quotient.toString())
-                })
-                } 
-                catch (error) 
-                {
-                    console.log(error)
-                }
-            }
-        }
-        return allPositions
-    }
-
     useDebounceEffect(() => 
     {
-        loadData()
+        dispatch(loadBlockchainData())
     }, [signer, contracts, deploymentAddresses], 500)
     
 
@@ -384,6 +232,7 @@ export default function PositionCreate()
     {
         const runAllUpdates = async () => 
         {
+
             // Step 1: Basic validations
             if (!selectedToken0 || !selectedToken1 || !fee)
             {
@@ -454,8 +303,8 @@ export default function PositionCreate()
                 setHideToken1DuringChange,
                 provider,
                 signer,
-                uniswapV3FactoryContract,
-                getPoolContract
+                contracts?.UniswapV3FactoryContract,
+                (address: string) => getPoolContract(signer, address) 
             )
 
             // Step 7: Update token amounts based on last edited field
@@ -478,8 +327,8 @@ export default function PositionCreate()
                     token1Amount,
                     provider,
                     signer,
-                    uniswapV3FactoryContract,
-                    getPoolContract
+                    contracts?.UniswapV3FactoryContract,
+                    (address: string) => getPoolContract(signer, address)
                 )
             }
 
@@ -502,8 +351,8 @@ export default function PositionCreate()
                     token1Amount,
                     provider,
                     signer,
-                    uniswapV3FactoryContract,
-                    getPoolContract
+                    contracts?.UniswapV3FactoryContract,
+                    (address: string) => getPoolContract(signer, address)
                 )
             }
 
@@ -520,8 +369,8 @@ export default function PositionCreate()
                 token1Amount,
                 currentPrice,
                 computeTokenAmount,
-                uniswapV3FactoryContract,
-                getPoolContract,
+                contracts?.UniswapV3FactoryContract,
+                (address: string) => getPoolContract(signer, address),
                 (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider)
             )
 
@@ -710,16 +559,16 @@ export default function PositionCreate()
 
     const getCurrentPoolPrice = async () => 
     {
-        if(uniswapV3FactoryContract && selectedToken0 && selectedToken1 && fee)
+        if(contracts?.UniswapV3FactoryContract && selectedToken0 && selectedToken1 && fee)
         {
             const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
             if (poolExist) 
             {
                 try 
                 {
-                    const poolAddress = await uniswapV3FactoryContract.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
-                    const poolCallContract = getPoolContract(poolAddress)
-                    const slot0 = await poolCallContract?.slot0()
+                    const poolAddress = await contracts?.UniswapV3FactoryContract.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
+                    const poolContract = getPoolContract(signer, poolAddress)
+                    const slot0 = await poolContract?.slot0()
                     const sqrtPriceX96 = slot0.sqrtPriceX96
                     const price = sqrtPToPriceNumber(sqrtPriceX96)
                     return price
@@ -740,11 +589,11 @@ export default function PositionCreate()
 
     const doesPoolExist = async (token0Address: string | null, token1Address: string | null, fee: number | null): Promise<boolean> => 
     {
-        if (uniswapV3FactoryContract && token0Address && token1Address && fee) 
+        if (contracts?.UniswapV3FactoryContract && token0Address && token1Address && fee) 
         {
             try 
             {
-                const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
+                const poolAddress = await contracts?.UniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
                 return poolAddress !== '0x0000000000000000000000000000000000000000'
             } 
             catch (error) 
@@ -862,12 +711,12 @@ export default function PositionCreate()
                 const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
                 if (!poolExist) 
                 {
-                    const factoryCreatePoolTx = await uniswapV3FactoryContract?.createPool(selectedToken0.Address, selectedToken1.Address, fee)
+                    const factoryCreatePoolTx = await contracts?.UniswapV3FactoryContract?.createPool(selectedToken0.Address, selectedToken1.Address, fee)
                     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
-                    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
-                    const poolCallContract = getPoolContract(poolAddress) 
+                    const poolAddress = await contracts?.UniswapV3FactoryContract?.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
+                    const poolContract = getPoolContract(signer, poolAddress)
                     const sqrtPriceX96 = priceToSqrtPBigNumber(currentPrice)
-                    const poolInitializeTx = await poolCallContract?.initialize(sqrtPriceX96)
+                    const poolInitializeTx = await poolContract?.initialize(sqrtPriceX96)
                     const poolInitializeTxReceipt = await poolInitializeTx.wait()
                     console.log(poolInitializeTxReceipt)
                 }
@@ -877,11 +726,11 @@ export default function PositionCreate()
 
                 if (parseFloat(token0Amount) > 0) 
                 {
-                    await approveTokenTransaction(token0.Address, nftManagerContractAddress, token0Amount, signer)
+                    await approveTokenTransaction(token0.Address, deploymentAddresses?.UniswapV3NFTManagerAddress, token0Amount, signer)
                 }
                 if (parseFloat(token1Amount) > 0) 
                 {
-                    await approveTokenTransaction(token1.Address, nftManagerContractAddress, token1Amount, signer)
+                    await approveTokenTransaction(token1.Address, deploymentAddresses?.UniswapV3NFTManagerAddress, token1Amount, signer)
                 }
 
                 const lowerTick = rangeType === "full_range" ? -887272 : nearestUsableTick(priceToTick(minPrice), 60)
@@ -894,7 +743,7 @@ export default function PositionCreate()
                     fee,
                     lowerTick,
                     upperTick,
-                    loadPositions 
+                    async () => (await dispatch(loadBlockchainPositions()).unwrap()).positions
                 )
 
                 if (matching) 
@@ -909,7 +758,7 @@ export default function PositionCreate()
                          amount1Min: 0
                      }
 
-                    const nftManagerAddLiquidity = await uniswapV3NFTManagerContract?.addLiquidity(addLiquidityParams)
+                    const nftManagerAddLiquidity = await contracts?.UniswapV3NFTManagerContract?.addLiquidity(addLiquidityParams)
                     const nftManagerAddLiquidityTx = await nftManagerAddLiquidity.wait()
                     console.log(nftManagerAddLiquidityTx)
                 }
@@ -930,7 +779,7 @@ export default function PositionCreate()
                         amount1Min: 0
                     }
 
-                    const nftManagerMintLiquidity = await uniswapV3NFTManagerContract?.mint(mintParams)
+                    const nftManagerMintLiquidity = await contracts?.UniswapV3NFTManagerContract?.mint(mintParams)
                     const nftManagerMintLiquidityTx = await nftManagerMintLiquidity.wait()
                     console.log(nftManagerMintLiquidityTx)
                 }
@@ -949,8 +798,8 @@ export default function PositionCreate()
 
     const getTwapPrice = async () => 
     {
-        const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
-        const poolContract = getPoolContract(poolAddress)
+        const poolAddress = await contracts?.UniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
+        const poolContract = getPoolContract(signer, poolAddress)
         
         const secondsAgos = [65, 0]
         const tickCumulatives = await poolContract?.observe(secondsAgos)
@@ -960,61 +809,6 @@ export default function PositionCreate()
         console.log(tickToPrice(Number(averageTick)))
     }
     
-    const quotePool = async () => 
-    {   
-
-        if (signer && deploymentAddresses && contracts) 
-        {
-            try
-            {       
-                const quoteParams =
-                {
-                    tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                    tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-                    fee: 3000,
-                    amountIn: ethers.parseEther("0.1337"),
-                    sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
-                }
-
-                const [amountOut, sqrtPriceX96After, tickAfter] = await uniswapV3QuoterContract?.quoteSingle.staticCall(quoteParams)
-                console.log("amountOut:", ethers.formatUnits(amountOut, 18)) 
-                console.log("sqrtPriceX96After:", sqrtPriceX96After.toString())
-                console.log("tickAfter:", tickAfter.toString())
-            }
-            catch(error)
-            {
-                console.log(error)
-            }
-        }
-
-    }
-
-    const swapToken = async () => 
-    {
-        try
-        {
-            await ethereumContract?.approve(managerContractAddress,ethers.parseEther("1"))
-
-            const swapParams = 
-            {
-                tokenIn: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                tokenOut: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-                fee: 3000,
-                amountIn: ethers.parseEther("0.1337"),
-                sqrtPriceLimitX96: priceToSqrtPBigNumber(4993)
-            }
-
-            const managerContractSwap = await uniswapV3ManagerContract?.swapSingle(swapParams)
-            const managerContractSwapTx = await managerContractSwap.wait()
-            console.log(managerContractSwapTx)
-        }
-        catch(error) 
-        {
-            console.log(error)
-        }
-
-    }
-
     return (
         <Box pos="relative">
             <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
@@ -1244,7 +1038,7 @@ export default function PositionCreate()
                                 fullWidth
                                 radius="md"
                                 className="mt-[5%]"
-                                onClick={connectWallet}
+                                onClick={() => dispatch(connectWallet())}
                             >
                                 Connect Wallet
                             </Button>
@@ -1453,7 +1247,7 @@ export default function PositionCreate()
                                         fullWidth
                                         radius="md"
                                         className="mt-[5%]"
-                                        onClick={connectWallet}
+                                        onClick={() => dispatch(connectWallet())}
                                     >
                                         Connect Wallet
                                     </Button>
@@ -1724,7 +1518,7 @@ export default function PositionCreate()
                                         fullWidth
                                         radius="md"
                                         className="mt-[5%]"
-                                        onClick={connectWallet}
+                                        onClick={() => dispatch(connectWallet())}
                                     >
                                         Connect Wallet
                                     </Button>

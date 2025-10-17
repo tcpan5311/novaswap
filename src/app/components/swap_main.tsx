@@ -1,4 +1,8 @@
 "use client"
+import { useSelector, useDispatch } from 'react-redux'
+import type { AppDispatch } from "../redux/store"
+import { blockchainSelector } from '../redux/blockchain_selectors'
+import { connectWallet, fetchDeploymentData, loadBlockchainData } from '../redux/blockchain_slice'
 import { useEffect } from 'react'
 import { MantineProvider} from '@mantine/core'
 import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
@@ -87,23 +91,8 @@ const handleSwitchToken =
 
 export default function SwapMain() 
 {
-    const {account, provider, signer, isConnected, connectWallet, deploymentAddresses, contracts, getPoolContract} = UseBlockchain()
-
-    const [ethereumContractAddress, setEthereumContractAddress] = useState("")
-    const [usdcContractAddress, setUsdcContractAddress] = useState("")
-    const [uniswapContractAddress, setUniswapContractAddress] = useState("")
-    const [factoryContractAddress, setFactoryContractAddress] = useState('')
-    const [managerContractAddress, setManagerContractAddress] = useState('')
-    const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
-    const [quoterContractAddress, setQuoterContractAddress] = useState('')
-
-    const [ethereumContract, setEthereumContract] = useState<ethers.Contract | null>(null)
-    const [usdcContract, setUsdcContract] = useState<ethers.Contract | null>(null)
-    const [uniswapContract, setUniswapContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3ManagerContract, setUniswapV3ManagerContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3NFTManagerContract, setUniswapV3NFTManagerContract] = useState<ethers.Contract | null>(null)
-    const [uniswapV3QuoterContract, setUniswapV3QuoterContract] = useState<ethers.Contract | null>(null)
+    const dispatch = useDispatch<AppDispatch>()
+    const {provider, signer, isConnected, deploymentAddresses, contracts, cryptocurrencies} = useSelector(blockchainSelector)
 
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
@@ -130,47 +119,10 @@ export default function SwapMain()
     const viewportRef = useRef<HTMLDivElement>(null)
     const [query, setQuery] = useState('')
     const [hovered, setHovered] = useState(-1)
-    const filtered = cryptocurrencies.filter((item) => item.Label.toLowerCase().includes(query.toLowerCase()))
+    const filtered = (cryptocurrencies ?? []).filter(item => item.Label.toLowerCase().includes(query.toLowerCase()))
 
     const [activeInput, setActiveInput] = useState<"swap1" | "swap2" | null>(null)
     
-    const loadData = async () => 
-    {
-        if (signer && deploymentAddresses && contracts) 
-        {
-            setEthereumContractAddress(deploymentAddresses?.EthereumAddress ?? "")
-            setUsdcContractAddress(deploymentAddresses?.USDCAddress ?? "")
-            setUniswapContractAddress(deploymentAddresses?.UniswapAddress ?? "")
-            setFactoryContractAddress(deploymentAddresses?.UniswapV3FactoryAddress ?? "")
-            setManagerContractAddress(deploymentAddresses?.UniswapV3ManagerAddress ?? "")
-            setNftManagerContractAddress(deploymentAddresses?.UniswapV3NFTManagerAddress ?? "")
-            setQuoterContractAddress(deploymentAddresses?.UniswapV3QuoterAddress ?? "")
-
-            setEthereumContract(contracts?.EthereumContract ?? null)
-            setUsdcContract(contracts?.USDCContract ?? null)
-            setUniswapContract(contracts?.UniswapContract ?? null)
-            setUniswapV3FactoryContract(contracts?.UniswapV3FactoryContract ?? null)
-            setUniswapV3ManagerContract(contracts?.UniswapV3ManagerContract ?? null)
-            setUniswapV3NFTManagerContract(contracts?.UniswapV3NFTManagerContract ?? null)
-            setUniswapV3QuoterContract(contracts?.UniswapV3QuoterContract ?? null)
-
-            const [ethereumName, ethereumSymbol, usdcName, usdcSymbol, uniswapName, uniswapSymbol] = 
-            await Promise.all
-            ([
-                contracts.EthereumContract?.name(), contracts.EthereumContract?.symbol(),
-                contracts.USDCContract?.name(), contracts.USDCContract?.symbol(),
-                contracts.UniswapContract?.name(), contracts.UniswapContract?.symbol()
-            ])
-
-            cryptocurrencies = 
-            [
-                { Label: `${ethereumName} (${ethereumSymbol})`, Address: deploymentAddresses?.EthereumAddress ?? "" },
-                { Label: `${usdcName} (${usdcSymbol})`, Address: deploymentAddresses?.USDCAddress ?? "" },
-                { Label: `${uniswapName} (${uniswapSymbol})`, Address: deploymentAddresses?.UniswapAddress ?? "" },
-            ]
-        }
-    }
-
     const handleSwap1Change = (value: string) => 
     {
         setActiveInput("swap1")
@@ -185,12 +137,17 @@ export default function SwapMain()
 
     useDebounceEffect(() => 
     {
-        loadData()
+        dispatch(loadBlockchainData())
     }, [signer, contracts, deploymentAddresses], 500)
+
+    const quoterContract = contracts?.UniswapV3QuoterContract
+    const managerContract = contracts?.UniswapV3ManagerContract
+    const nftManagerContract = contracts?.UniswapV3NFTManagerContract
+    const uniswapV3ManagerAddress = deploymentAddresses?.UniswapV3ManagerAddress
 
     useDebounceEffect(() => 
     {
-        if (!uniswapV3QuoterContract || !selectedToken0 || !selectedToken1 || !provider) return
+        if (!quoterContract || !selectedToken0 || !selectedToken1 || !provider) return
 
         if (activeInput === "swap1" && !swapValue1) 
         {
@@ -217,14 +174,14 @@ export default function SwapMain()
                 if (activeInput === "swap1" && swapValue1) 
                 {
                     const inputAmount = ethers.parseUnits(swapValue1, 18)
-                    const [calculatedOutput] = await uniswapV3QuoterContract.quoteExactInput.staticCall(path, inputAmount)
+                    const [calculatedOutput] = await quoterContract.quoteExactInput.staticCall(path, inputAmount)
                     setSwapValue1(swapValue1)
                     setSwapValue2(ethers.formatUnits(calculatedOutput, 18))
                 } 
                 else if (activeInput === "swap2" && swapValue2) 
                 {
                     const desiredOutput = ethers.parseUnits(swapValue2, 18)
-                    const [calculatedInput] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, desiredOutput)
+                    const [calculatedInput] = await quoterContract.quoteExactOutput.staticCall(path, desiredOutput)
                     setSwapValue1(ethers.formatUnits(calculatedInput, 18))
                     setSwapValue2(swapValue2)
                 }
@@ -239,7 +196,7 @@ export default function SwapMain()
         }
 
         fetchQuote()
-    }, [swapValue1, swapValue2, selectedToken0, selectedToken1, uniswapV3QuoterContract, activeInput], 500)
+    }, [swapValue1, swapValue2, selectedToken0, selectedToken1, quoterContract, activeInput], 500)
     
     useEffect(() => 
     {
@@ -323,19 +280,19 @@ export default function SwapMain()
 
     const swapExactInput = async () => 
     {
-        if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
+        if (!quoterContract || !managerContract || !uniswapV3ManagerAddress || !selectedToken0 || !selectedToken1 || !signer) return
 
         try 
         {
             const inputAmount = ethers.parseEther(swapValue1)
             const path = ethers.solidityPacked(["address", "uint24", "address"], [selectedToken0.Address, 3000, selectedToken1.Address])
-            const [calculatedOutput] = await uniswapV3QuoterContract.quoteExactInput.staticCall(path, inputAmount)
+            const [calculatedOutput] = await quoterContract.quoteExactInput.staticCall(path, inputAmount)
             const slippageTolerance = 100n
             const minAmountOut = calculatedOutput - (calculatedOutput * slippageTolerance / 10000n)
 
             if (inputAmount > 0n) 
             {
-                await approveTokenTransaction(selectedToken0.Address, managerContractAddress, inputAmount, signer)
+                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, inputAmount, signer)
             }
 
             const swapParams = {
@@ -345,7 +302,7 @@ export default function SwapMain()
                 minAmountOut: minAmountOut
             }
 
-            const managerSwap = await uniswapV3ManagerContract.swapExactInput(swapParams)
+            const managerSwap = await managerContract.swapExactInput(swapParams)
             const managerSwapTx = await managerSwap.wait()
 
             setSwapValue1(ethers.formatUnits(inputAmount, 18))
@@ -360,7 +317,7 @@ export default function SwapMain()
 
     const swapExactOutput = async () => 
     {
-        if (!uniswapV3QuoterContract || !uniswapV3ManagerContract || !selectedToken0 || !selectedToken1 || !signer) return
+        if (!quoterContract || !managerContract || !uniswapV3ManagerAddress || !selectedToken0 || !selectedToken1 || !signer) return
 
         try 
         {
@@ -371,13 +328,13 @@ export default function SwapMain()
                 [selectedToken0.Address, 3000, selectedToken1.Address]
             )
 
-            const [quotedInputAmount] = await uniswapV3QuoterContract.quoteExactOutput.staticCall(path, amountOut)
+            const [quotedInputAmount] = await quoterContract.quoteExactOutput.staticCall(path, amountOut)
             const slippageTolerance = 100n
             const maxAmountIn = quotedInputAmount + (quotedInputAmount * slippageTolerance / 10000n)
 
             if (maxAmountIn > 0n) 
             {
-                await approveTokenTransaction(selectedToken0.Address, managerContractAddress, maxAmountIn, signer)
+                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, maxAmountIn, signer)
             }
 
             const swapParams = 
@@ -388,7 +345,7 @@ export default function SwapMain()
                 maxAmountIn
             }
 
-            const managerSwap = await uniswapV3ManagerContract.swapExactOutput(swapParams)
+            const managerSwap = await managerContract.swapExactOutput(swapParams)
             const managerSwapTx = await managerSwap.wait()
 
             console.log("Exact output swap successful", managerSwapTx)
@@ -400,74 +357,70 @@ export default function SwapMain()
     }
 
     return (
-        <div className="bg-white mt-[5%] h-screen">
-            <Grid justify={isSmallScreen ? "flex-start ml-10" : "center"} align="center">
-            
+        <div className="bg-white mt-[5%] flex justify-center">
+            <Grid justify="center" align="center">
                 <Grid.Col span="auto" className="w-[500px] min-w-[500px] max-w-[500px] md:ml-4">
                     <Group>
-                    {['Swap', 'Limit', 'Send'].map((label) => 
-                    (
-                        <Button key={label} variant={selectedTab === label ? 'filled' : 'outline'} onClick={() => setSelectedTab(label)}>
-                        {label}
-                        </Button>
-                    ))}
-                    <div className= "ml-auto">
-
-                        <Popover width={300} trapFocus position="bottom" withArrow shadow="md">
-                        <Popover.Target>
-                        <ActionIcon size={42} variant="subtle">
-                        <IconSettings size={24} />
-                        </ActionIcon>
-                        </Popover.Target>
-                        <Popover.Dropdown>
-                        <TextInput label="Max slippage:" placeholder="0" size="sm" />
-                        </Popover.Dropdown>
-                        </Popover>
-                    </div>
+                        {['Swap', 'Limit', 'Send'].map((label) => (
+                            <Button
+                                key={label}
+                                variant={selectedTab === label ? 'filled' : 'outline'}
+                                onClick={() => setSelectedTab(label)}
+                            >
+                                {label}
+                            </Button>
+                        ))}
+                        <div className="ml-auto">
+                            <Popover width={300} trapFocus position="bottom" withArrow shadow="md">
+                                <Popover.Target>
+                                    <ActionIcon size={42} variant="subtle">
+                                        <IconSettings size={24} />
+                                    </ActionIcon>
+                                </Popover.Target>
+                                <Popover.Dropdown>
+                                    <TextInput label="Max slippage:" placeholder="0" size="sm" />
+                                </Popover.Dropdown>
+                            </Popover>
+                        </div>
                     </Group>
-                    
-                    <Card shadow="xl" padding="xl" className="w-full h-full mt-[2%]">
 
-                            {selectedTab === "Swap" && (
+                    <Card shadow="xl" padding="xl" className="w-full mt-[2%] max-h-[700px] overflow-auto">
+                        {selectedTab === "Swap" && (
                             <>
                                 <Textarea
-                                size='xl'
-                                classNames= 
-                                {{
-                                    description: classes.swap_text_area,
-                                    input: "h-[110px] w-full text-2xl px-4 rounded-2xl"
-                                }}
-                                value={swapValue1}
-                                onChange={(event) => handleSwap1Change(event.currentTarget.value)}
-                                description="Sell"
-                                placeholder="0"
-                                rightSection=
-                                {
-                                    <Stack gap="xs" align="start">
-                                        <Button size="sm" radius="xl" onClick={open1} leftSection={<IconCoinFilled size={17} />}>
-                                            <Group align='center'>
-                                                {selectedToken0 ? selectedToken0.Label : "Select Token"}
-                                            </Group>
-                                        </Button>
+                                    size='xl'
+                                    classNames={{
+                                        description: classes.swap_text_area,
+                                        input: "h-[170px] w-full text-2xl px-4 rounded-2xl"
+                                    }}
+                                    value={swapValue1}
+                                    onChange={(event) => handleSwap1Change(event.currentTarget.value)}
+                                    description="Sell"
+                                    placeholder="0"
+                                    rightSection={
+                                        <Stack gap="xs" align="start">
+                                            <Button size="sm" radius="xl" onClick={open1} leftSection={<IconCoinFilled size={17} />}>
+                                                <Group align='center'>
+                                                    {selectedToken0 ? selectedToken0.Label : "Select Token"}
+                                                </Group>
+                                            </Button>
 
-                                        {selectedToken0 && 
-                                        (
-                                            <Text size="sm" c="dimmed">
-                                            {token0Balance}
-                                            </Text>
-                                        )}
-                                    </Stack>
-                                }
-                                rightSectionWidth={200}
+                                            {selectedToken0 && (
+                                                <Text size="sm" c="dimmed">
+                                                    {token0Balance}
+                                                </Text>
+                                            )}
+                                        </Stack>
+                                    }
+                                    rightSectionWidth={200}
                                 />
 
-                                <ActionIcon 
-                                    size={42} 
-                                    variant="default" 
-                                    className= "self-center mt-[5%]" 
-                                    onClick={() => 
-                                        handleSwitchToken
-                                        (
+                                <ActionIcon
+                                    size={42}
+                                    variant="default"
+                                    className="self-center mt-[5%]"
+                                    onClick={() =>
+                                        handleSwitchToken(
                                             selectedToken0,
                                             selectedToken1,
                                             setSelectedToken0,
@@ -478,160 +431,145 @@ export default function SwapMain()
                                             setSwapValue2
                                         )
                                     }
-                                    >
+                                >
                                     <IconTransfer size={24} />
                                 </ActionIcon>
 
                                 <Textarea
-                                size='xl'
-                                classNames= 
-                                {{
-                                    description: classes.swap_text_area,
-                                    input: "h-[110px] w-full text-2xl px-4 rounded-2xl"
-                                }}
-                                value={swapValue2}
-                                onChange={(event) => handleSwap2Change(event.currentTarget.value)}
-                                description="Buy"
-                                placeholder="0"
-                                rightSection=
-                                {
-                                    <Stack gap="xs" align="start">
-                                        <Button size="sm" radius="xl" onClick={open2} leftSection={<IconCoinFilled size={17} />}>
-                                            <Group align='center'>
-                                                {selectedToken1 ? selectedToken1.Label : "Select Token"}
-                                            </Group>
-                                        </Button>
+                                    size='xl'
+                                    classNames={{
+                                        description: classes.swap_text_area,
+                                        input: "h-[170px] w-full text-2xl px-4 rounded-2xl"
+                                    }}
+                                    value={swapValue2}
+                                    onChange={(event) => handleSwap2Change(event.currentTarget.value)}
+                                    description="Buy"
+                                    placeholder="0"
+                                    rightSection={
+                                        <Stack gap="xs" align="start">
+                                            <Button size="sm" radius="xl" onClick={open2} leftSection={<IconCoinFilled size={17} />}>
+                                                <Group align='center'>
+                                                    {selectedToken1 ? selectedToken1.Label : "Select Token"}
+                                                </Group>
+                                            </Button>
 
-                                        {selectedToken1 && 
-                                        (
-                                            <Text size="sm" c="dimmed">
-                                            {token1Balance}
-                                            </Text>
-                                        )}
-                                    </Stack>
-                                }
-                                rightSectionWidth={200}
+                                            {selectedToken1 && (
+                                                <Text size="sm" c="dimmed">
+                                                    {token1Balance}
+                                                </Text>
+                                            )}
+                                        </Stack>
+                                    }
+                                    rightSectionWidth={200}
                                 />
 
                                 {isConnected ? (
-                                    <Button fullWidth radius="md" className= "mt-[10%]" 
-                                    disabled={!isSwapValid || !hasLiquidity}
-                                    onClick={() => 
-                                    {
-                                        if (activeInput === "swap1") 
-                                        {
-                                            swapExactInput()
-                                        } 
-                                        else if (activeInput === "swap2") 
-                                        {
-                                            swapExactOutput()
-                                        } 
-                                        else 
-                                        {
-                                            console.log("Please enter an amount first.")
+                                    <Button
+                                        fullWidth
+                                        radius="md"
+                                        className="mt-[10%]"
+                                        disabled={!isSwapValid || !hasLiquidity}
+                                        onClick={() => {
+                                            if (activeInput === "swap1") {
+                                                swapExactInput()
+                                            } else if (activeInput === "swap2") {
+                                                swapExactOutput()
+                                            } else {
+                                                console.log("Please enter an amount first.")
+                                            }
+                                        }}
+                                    >
+                                        {!isSwapValid
+                                            ? swapValidError === "insufficient_tokens"
+                                                ? "Insufficient tokens"
+                                                : "Incomplete fields"
+                                            : !hasLiquidity
+                                                ? "Insufficient liquidity"
+                                                : "Swap"
                                         }
-                                    }}
-                                    >    
-                                    {!isSwapValid
-                                    ? swapValidError === "insufficient_tokens"
-                                        ? "Insufficient tokens"
-                                        : "Incomplete fields"
-                                    : !hasLiquidity
-                                        ? "Insufficient liquidity"
-                                        : "Swap"
-                                    }
                                     </Button>
-                                ):
-                                (
-                                    <Button fullWidth radius="md" className= "mt-[10%]" onClick={connectWallet}>Connect Wallet</Button>
+                                ) : (
+                                    <Button fullWidth radius="md" className="mt-[10%]" onClick={() => dispatch(connectWallet())}>
+                                        Connect Wallet
+                                    </Button>
                                 )}
                             </>
-                            )}
+                        )}
 
-                            {selectedTab === "Limit" && (
-                                <h1>Hello limit</h1>
-                            )}
+                        {selectedTab === "Limit" && (
+                            <h1>Hello limit</h1>
+                        )}
 
-                            
-                            {selectedTab === "Send" && (
-                                <h1>Hello send</h1>
-                            )}
-
-
+                        {selectedTab === "Send" && (
+                            <h1>Hello send</h1>
+                        )}
                     </Card>
                 </Grid.Col>
             </Grid>
 
             <Modal
-            opened={opened1}
-            onClose={close1}
-            title={<Text fw={750} c="#4f0099">Select a token</Text>}
-            closeOnClickOutside={false}
-            closeOnEscape={false}
-            size="md"
-            centered
+                opened={opened1}
+                onClose={close1}
+                title={<Text fw={750} c="#4f0099">Select a token</Text>}
+                closeOnClickOutside={false}
+                closeOnEscape={false}
+                size="md"
+                centered
             >
                 <Input
-                placeholder="Search token"
-                leftSection={<IconSearch size={16} />}
-                value={query}
-                onChange={(event) => 
-                {
-                    setQuery(event.currentTarget.value)
-                    setHovered(-1)
-                }}
+                    placeholder="Search token"
+                    leftSection={<IconSearch size={16} />}
+                    value={query}
+                    onChange={(event) => {
+                        setQuery(event.currentTarget.value)
+                        setHovered(-1)
+                    }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
                     {filtered.map((item) => (
                         <UnstyledButton
-                        key={item.Address}
-                        data-list-item
-                        display="block"
-                        onClick={() => 
-                        {
-                            handleTokenSelect(item, selectedToken0, selectedToken1, setSelectedToken0, setSelectedToken1, close1)
-                        }}
+                            key={item.Address}
+                            data-list-item
+                            display="block"
+                            onClick={() => handleTokenSelect(item, selectedToken0, selectedToken1, setSelectedToken0, setSelectedToken1, close1)}
                         >
-                        {item.Label}
+                            {item.Label}
                         </UnstyledButton>
                     ))}
                 </ScrollArea>
             </Modal>
 
             <Modal
-            opened={opened2}
-            onClose={close2}
-            title={<Text fw={750} c="#4f0099">Select a token</Text>}
-            closeOnClickOutside={false}
-            closeOnEscape={false}
-            size="md"
-            centered
+                opened={opened2}
+                onClose={close2}
+                title={<Text fw={750} c="#4f0099">Select a token</Text>}
+                closeOnClickOutside={false}
+                closeOnEscape={false}
+                size="md"
+                centered
             >
                 <Input
-                placeholder="Search token"
-                leftSection={<IconSearch size={16} />}
-                onChange={(event) => 
-                {
-                    setQuery(event.currentTarget.value)
-                    setHovered(-1)
-                }}
+                    placeholder="Search token"
+                    leftSection={<IconSearch size={16} />}
+                    onChange={(event) => {
+                        setQuery(event.currentTarget.value)
+                        setHovered(-1)
+                    }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
                     {filtered.map((item) => (
                         <UnstyledButton
-                        key={item.Address}
-                        data-list-item
-                        display="block"
-                        onClick={() => 
-                        {
-                            handleTokenSelect(item, selectedToken1, selectedToken0, setSelectedToken1, setSelectedToken0, close2)
-                        }}
+                            key={item.Address}
+                            data-list-item
+                            display="block"
+                            onClick={() => handleTokenSelect(item, selectedToken1, selectedToken0, setSelectedToken1, setSelectedToken0, close2)}
                         >
-                        {item.Label}
+                            {item.Label}
                         </UnstyledButton>
                     ))}
                 </ScrollArea>
             </Modal>
         </div>
     )
+
 }
