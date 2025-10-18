@@ -1,8 +1,16 @@
 import { Dispatch, SetStateAction } from "react"
+
 const BUFFER_PERCENTAGE = 0.01
 const PRICE_STEP_PERCENTAGE = 0.01
 
-export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, maxPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMinPrice: (price: number) => void, setMinPriceInput: (input: string) => void) => 
+type SetPrice = (price: number) => void
+type SetInput = (input: string) => void
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+const calculateDynamicBuffer = (minPrice: number, maxPrice: number) => (maxPrice - minPrice) * BUFFER_PERCENTAGE
+
+export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, minPriceAllowed: number, maxPriceAllowed: number, setPrice: SetPrice, setPriceInput: SetInput) => 
 {
     if (!chartRef.current) return
 
@@ -10,137 +18,67 @@ export const handleMinPriceMove = async (event: MouseEvent, chartRef: React.RefO
     const offsetY = event.clientY - rect.top
     const chartHeight = rect.height
 
-    const minAllowedPrice = currentPoolPrice * 0.75
-    const dynamicBuffer = (maxPrice - minAllowedPrice) * BUFFER_PERCENTAGE
+    let newPrice = maxPriceAllowed - ((offsetY / chartHeight) * (maxPriceAllowed - minPriceAllowed))
+    const dynamicBuffer = calculateDynamicBuffer(minPriceAllowed, maxPriceAllowed)
 
-    let newMinPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-    if (newMinPrice > maxPrice - dynamicBuffer) 
-    {
-        newMinPrice = maxPrice - dynamicBuffer
-    } 
-    else if (newMinPrice < minAllowedPrice) 
-    {
-        newMinPrice = minAllowedPrice
-    }
-
-    setMinPrice(newMinPrice)
-    setMinPriceInput(newMinPrice.toFixed(18))
+    newPrice = clamp(newPrice, minPriceAllowed, maxPriceAllowed - dynamicBuffer)
+    setPrice(newPrice)
+    setPriceInput(newPrice.toFixed(18))
 }
 
-export const handleMaxPriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, minPrice: number, graphMaxPrice: number, graphMinPrice: number, currentPoolPrice: number, setMaxPrice: (price: number) => void, setMaxPriceInput: (input: string) => void) => 
-{
-    if (!chartRef.current) return
-
-    const rect = chartRef.current.getBoundingClientRect()
-    const offsetY = event.clientY - rect.top
-    const chartHeight = rect.height
-
-    const maxAllowedPrice = currentPoolPrice * 1.25
-    const dynamicBuffer = (maxAllowedPrice - minPrice) * BUFFER_PERCENTAGE
-
-    let newMaxPrice = graphMaxPrice - ((offsetY / chartHeight) * (graphMaxPrice - graphMinPrice))
-
-    if (newMaxPrice < minPrice + dynamicBuffer) 
-    {
-        newMaxPrice = minPrice + dynamicBuffer
-    } 
-    else if (newMaxPrice > maxAllowedPrice) 
-    {
-        newMaxPrice = maxAllowedPrice
-    }
-
-    setMaxPrice(newMaxPrice)
-    setMaxPriceInput(newMaxPrice.toFixed(18))
-}
-
-
-export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => void, handleMaxPriceMove: (event: MouseEvent) => Promise<void>, handleMinPriceMove: (event: MouseEvent) => Promise<void>) => 
+export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => void, handlePriceMoveFns: Array<(event: MouseEvent) => Promise<void>>) => 
 {
     setDraggingType(null)
-    document.removeEventListener("mousemove", handleMaxPriceMove as any)
-    document.removeEventListener("mousemove", handleMinPriceMove as any)
+    handlePriceMoveFns.forEach(fn => document.removeEventListener("mousemove", fn as any))
     document.removeEventListener("mouseup", handleMouseUp as any)
 }
 
-export const handleMinPrice = async (currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
+export const handleClampedPrice = async (type: "min" | "max", currentPoolPrice: number, otherPrice: number, setPrice: Dispatch<SetStateAction<number>>, setPriceInput?: Dispatch<SetStateAction<string>>): Promise<number> => 
 {
-    const minAllowed = currentPoolPrice * 0.85
-    const buffer = (maxPrice - minAllowed) * BUFFER_PERCENTAGE
-    const maxLimit = maxPrice - buffer
-
+    const BUFFER_PERCENTAGE = 0.05
     let clamped: number
-    setMinPrice((prev) => 
+
+    setPrice((prev) => 
     {
-        clamped = Math.max(Math.min(prev, maxLimit), minAllowed)
+        if (type === "min") 
+        {
+            const minAllowed = currentPoolPrice * 0.85
+            const buffer = (otherPrice - minAllowed) * BUFFER_PERCENTAGE
+            const maxLimit = otherPrice - buffer
+            clamped = Math.max(Math.min(prev, maxLimit), minAllowed)
+        } 
+        else 
+        {
+            const maxAllowed = currentPoolPrice * 1.15
+            const buffer = (maxAllowed - otherPrice) * BUFFER_PERCENTAGE
+            const minLimit = otherPrice + buffer
+            clamped = Math.min(Math.max(prev, minLimit), maxAllowed)
+        }
+
+        if (setPriceInput) 
+        {
+            setPriceInput(clamped.toFixed(18))
+        }
+
         return clamped
     })
 
     return clamped!
 }
 
-export const handleMaxPrice = async (currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>): Promise<number> => 
+export const handlePriceClick = (direction: "increase" | "decrease", currentPrice: number, minPrice: number, maxPrice: number, setPrice: Dispatch<SetStateAction<number>>, setPriceInput: Dispatch<SetStateAction<string>>) => 
 {
-    const maxAllowed = currentPoolPrice * 1.15
-    const buffer = (maxAllowed - minPrice) * BUFFER_PERCENTAGE
-    const minLimit = minPrice + buffer
-
-    let clamped: number
-    setMaxPrice((prev) => 
-    {
-        clamped = Math.min(Math.max(prev, minLimit), maxAllowed)
-        return clamped
-    })
-
-    return clamped!
-}
-
-export const handleMinClick = (direction: "increase" | "decrease", currentPoolPrice: number, maxPrice: number, setMinPrice: Dispatch<SetStateAction<number>>, setMinPriceInput: Dispatch<SetStateAction<string>>) => 
-{
-    const minAllowedPrice = currentPoolPrice * 0.75
-    const dynamicBuffer = (maxPrice - minAllowedPrice) * BUFFER_PERCENTAGE
-
-    setMinPrice((prev) => 
+    const step = (prev: number) => 
     {
         const step = prev * PRICE_STEP_PERCENTAGE
         let newPrice = direction === "increase" ? prev + step : prev - step
-
-        if (newPrice > maxPrice - dynamicBuffer) 
-        {
-            newPrice = maxPrice - dynamicBuffer
-        } 
-        else if (newPrice < minAllowedPrice) 
-        {
-            newPrice = minAllowedPrice
-        }
-
-        setMinPriceInput(newPrice.toFixed(18))
+        const minAllowed = currentPrice * 0.75
+        const maxAllowed = currentPrice * 1.25
+        const dynamicBuffer = calculateDynamicBuffer(minPrice, maxPrice)
+        newPrice = clamp(newPrice, minAllowed, maxAllowed - dynamicBuffer)
+        setPriceInput(newPrice.toFixed(18))
         return newPrice
-    })
+    }
+
+    setPrice(step)
 }
-
-export const handleMaxClick = (direction: "increase" | "decrease", currentPoolPrice: number, minPrice: number, setMaxPrice: Dispatch<SetStateAction<number>>, setMaxPriceInput: Dispatch<SetStateAction<string>>) => 
-{
-    const maxAllowedPrice = currentPoolPrice * 1.25
-    const dynamicBuffer = (maxAllowedPrice - minPrice) * BUFFER_PERCENTAGE
-
-    setMaxPrice((prev) => 
-    {
-        const step = prev * PRICE_STEP_PERCENTAGE
-        let newPrice = direction === "increase" ? prev + step : prev - step
-
-        if (newPrice < minPrice + dynamicBuffer) 
-        {
-            newPrice = minPrice + dynamicBuffer
-        } 
-        else if (newPrice > maxAllowedPrice) 
-        {
-            newPrice = maxAllowedPrice
-        }
-
-        setMaxPriceInput(newPrice.toFixed(18))
-        return newPrice
-    })
-}
-
-

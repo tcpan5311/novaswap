@@ -14,7 +14,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
-import {handleMinPriceMove, handleMaxPriceMove, handleMouseUp, handleMinPrice, handleMaxPrice, handleMinClick, handleMaxClick} from '../utils/position_create/price_range_utils'
+import {handlePriceMove, handleMouseUp, handleClampedPrice, handlePriceClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
 import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
@@ -171,62 +171,89 @@ export default function PositionCreate()
     }, [signer, contracts, deploymentAddresses], 500)
     
 
+    {/* === START: Core function of dragger and price range === */}
     useEffect(() => 
     {
+        if (!isFirstStepValid || !draggingType) return
+
         const attachListeners = async () => 
         {
-            if (!isFirstStepValid) return
-            
-            let currentPrice = await getCurrentPoolPrice() ?? 0
+            const currentPrice = (await getCurrentPoolPrice()) 
+            if (!currentPrice) return
 
-            const wrappedHandleMinPriceMove = async (event: MouseEvent) => 
+            const handleMouseMove = async (event: MouseEvent) => 
             {
-                await handleMinPriceMove(event, chartRef, maxPrice, graphMaxPrice, graphMinPrice, currentPrice, setMinPrice, setMinPriceInput)
+                if (draggingType === "min") 
+                {
+                    const minAllowed = currentPrice * 0.75
+                    await handlePriceMove(event, chartRef, minAllowed, maxPrice, setMinPrice, setMinPriceInput)
+                } 
+                else 
+                {
+                    const maxAllowed = currentPrice * 1.25
+                    await handlePriceMove(event, chartRef, minPrice, maxAllowed, setMaxPrice, setMaxPriceInput)
+                }
             }
 
-            const wrappedHandleMaxPriceMove = async (event: MouseEvent) => 
-            {
-                await handleMaxPriceMove(event, chartRef, minPrice, graphMaxPrice, graphMinPrice, currentPrice, setMaxPrice, setMaxPriceInput)
-            }
+            const handleMouseUpListener = () => handleMouseUp(setDraggingType, [handleMouseMove])
 
-            const wrappedHandleMouseUp = () => 
-            {
-                handleMouseUp(setDraggingType, wrappedHandleMaxPriceMove, wrappedHandleMinPriceMove)
-            }
-
-            if (draggingType === "max") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-            } 
-            else if (draggingType === "min") 
-            {
-                document.addEventListener("mousemove", wrappedHandleMinPriceMove as any)
-            }
-
-            document.addEventListener("mouseup", wrappedHandleMouseUp as any)
+            document.addEventListener("mousemove", handleMouseMove as any)
+            document.addEventListener("mouseup", handleMouseUpListener as any)
 
             return () => 
             {
-                document.removeEventListener("mousemove", wrappedHandleMaxPriceMove as any)
-                document.removeEventListener("mousemove", wrappedHandleMinPriceMove as any)
-                document.removeEventListener("mouseup", wrappedHandleMouseUp as any)
+                document.removeEventListener("mousemove", handleMouseMove as any)
+                document.removeEventListener("mouseup", handleMouseUpListener as any)
             }
         }
 
         attachListeners()
+
     }, [draggingType, isFirstStepValid, minPrice, maxPrice])
+
+    const validateMinPrice = async () => 
+    {
+        const currentPrice = (await getCurrentPoolPrice()) 
+         if (!currentPrice) return
+
+        const clampedMin = await handleClampedPrice("min", currentPrice, maxPrice, setMinPrice, setMinPriceInput)
+
+        if (clampedMin != null) 
+        {
+            setMinPriceInput(clampedMin.toString())
+        }
+    }
+
+    const validateMaxPrice = async () => 
+    {
+        const currentPrice = (await getCurrentPoolPrice())
+        if (!currentPrice) return
+
+        const clampedMax = await handleClampedPrice("max", currentPrice, minPrice, setMaxPrice, setMaxPriceInput)
+
+        if (clampedMax != null) 
+        {
+            setMaxPriceInput(clampedMax.toString())
+        }
+    }
 
     const handleMinPriceClick = async (direction: "increase" | "decrease") => 
     {
-        const currentPrice = (await getCurrentPoolPrice()) ?? 0
-        handleMinClick(direction, currentPrice, maxPrice, setMinPrice, setMinPriceInput)
+        const currentPrice = await getCurrentPoolPrice()
+        if (!currentPrice) return
+
+        handlePriceClick(direction, currentPrice, minPrice, maxPrice, setMinPrice, setMinPriceInput)
     }
 
     const handleMaxPriceClick = async (direction: "increase" | "decrease") => 
     {
-        const currentPrice = (await getCurrentPoolPrice()) ?? 0
-        handleMaxClick(direction, currentPrice, minPrice, setMaxPrice, setMaxPriceInput)
+        const currentPrice = await getCurrentPoolPrice()
+        if (!currentPrice) return
+
+        handlePriceClick(direction, currentPrice, minPrice, maxPrice, setMaxPrice, setMaxPriceInput)
     }
+
+    {/* === END: Core function of dragger and price range === */}
 
     useDebounceEffect(() => 
     {
@@ -423,60 +450,6 @@ export default function PositionCreate()
         closeModal()
     }
 
-    //Stepper logic implementation
-    const [stepActive, setStepActive] = useState(1)
-    const [highestStepVisited, setHighestStepVisited] = useState(stepActive)
-
-    const handleStepClick = (step: number) => 
-    {
-        processStepClick(step, highestStepVisited, setStepActive, selectedToken0, selectedToken1, fee, validateFirstStep, setSelectedToken0, setSelectedToken1, setFee, setInitialPrice, setInitialPriceInput, setMinPrice, setMaxPrice, setMinPriceInput, setMaxPriceInput, setToken0Amount, setToken1Amount, updateTokenSelection)
-    }
-
-    const shouldAllowSelectStep = (step: number) => 
-    {
-        return shouldAllowStep(step, highestStepVisited)
-    }
-
-    const handleNext = () => processStepChange(
-        'next', 
-        stepActive, 
-        setStepActive, 
-        setHighestStepVisited,
-        getCurrentPoolPrice, 
-        setSelectedToken0, 
-        setSelectedToken1,
-        setFee, 
-        setInitialPrice, 
-        setInitialPriceInput,
-        setMinPrice, 
-        setMaxPrice, 
-        setMinPriceInput, 
-        setMaxPriceInput,
-        setToken0Amount, 
-        setToken1Amount,
-        updateTokenSelection
-    )
-
-    const handleBack = () => processStepChange(
-        'back', 
-        stepActive, 
-        setStepActive, 
-        setHighestStepVisited,
-        getCurrentPoolPrice, 
-        setSelectedToken0, 
-        setSelectedToken1,
-        setFee, 
-        setInitialPrice, 
-        setInitialPriceInput,
-        setMinPrice, 
-        setMaxPrice, 
-        setMinPriceInput, 
-        setMaxPriceInput,
-        setToken0Amount, 
-        setToken1Amount,
-        updateTokenSelection
-    )
-
     const updateTokenSelection = (shouldSet = true) => 
     {
         if (!selectedToken0 || !selectedToken1 || !fee) return
@@ -501,6 +474,40 @@ export default function PositionCreate()
             })
         }
     }
+
+    {/* === START: Core function of stepper === */}
+    const [stepActive, setStepActive] = useState(1)
+    const [highestStepVisited, setHighestStepVisited] = useState(stepActive)
+
+    const setters = 
+    {
+        setStepActive,
+        setHighestStepVisited,
+        setSelectedToken0,
+        setSelectedToken1,
+        setFee,
+        setInitialPrice,
+        setInitialPriceInput,
+        setMinPrice,
+        setMaxPrice,
+        setMinPriceInput,
+        setMaxPriceInput,
+        setToken0Amount,
+        setToken1Amount,
+        updateTokenSelection
+    }
+
+    const handleStepClick = (step: number) => 
+    {
+        processStepClick(step, highestStepVisited, setters, selectedToken0, selectedToken1, fee, validateFirstStep)
+    }
+
+    const shouldAllowSelectStep = (step: number) => shouldAllowStep(step, highestStepVisited)
+
+    const handleBack = () => processStepChange('back', stepActive, setters, getCurrentPoolPrice)
+    const handleNext = () => processStepChange('next', stepActive, setters, getCurrentPoolPrice)
+    {/* === END: Core function of stepper === */}
+
 
     //Toggle visibility of set fee component
     const [isVisible, setIsVisible] = useState(true)
@@ -529,32 +536,6 @@ export default function PositionCreate()
         if (parsed >= 1 && decimals > maxDecimalsForOneOrMore) return null
 
         return parsed
-    }
-
-    const validateMinPrice = async () => 
-    {
-
-        let currentPrice = await getCurrentPoolPrice() ?? 0
-        const clampedMin = await handleMinPrice(currentPrice, maxPrice, setMinPrice)
-
-        if (clampedMin != null)
-        {
-            setMinPriceInput(clampedMin.toString())
-        }
-    }
-
-    const validateMaxPrice = async () => 
-    {
-        if(isFirstStepValid) 
-        {
-            let currentPrice = await getCurrentPoolPrice() ?? 0
-            const clampedMax = await handleMaxPrice(currentPrice, minPrice, setMaxPrice)
-
-            if (clampedMax != null)
-            {
-                setMaxPriceInput(clampedMax.toString())
-            }
-        }
     }
 
     const getCurrentPoolPrice = async () => 
