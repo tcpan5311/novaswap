@@ -89,7 +89,6 @@ export const computeTokenAmount = async (
     isAToB: boolean,
     overrideAmount: string,
     currentPrice: number,
-    provider: ethers.Provider,
     signer: ethers.Signer,
     token0Address: string,
     token1Address: string,
@@ -103,7 +102,12 @@ export const computeTokenAmount = async (
 ): Promise<{ amountA: string; amountB: string }> => 
     {
 
-    const network = await provider.getNetwork()
+    if (!signer.provider) 
+    {
+        throw new Error("Provider not available from signer")
+    }
+    
+    const network = await signer.provider.getNetwork()
     const chainId = Number(network.chainId)
 
     const [contract1, contract2] = [token0Address, token1Address].map(addr => new ethers.Contract(addr, ERC20Mintable.abi, signer))
@@ -244,7 +248,6 @@ export const updateTokenAmounts = async (
         isAToB: boolean,
         overrideAmount: string,
         currentPrice: number,
-        provider: any,
         signer: any,
         token0Address: string,
         token1Address: string,
@@ -261,7 +264,6 @@ export const updateTokenAmounts = async (
     lastEditedField: string,
     token0Amount: string,
     token1Amount: string,
-    provider: any,
     signer: any,
     uniswapV3FactoryContract: any,
     getPoolContract: (address: string) => any
@@ -287,7 +289,6 @@ export const updateTokenAmounts = async (
         isAToB,
         trimmed,
         currentPrice,
-        provider,
         signer,
         token0Address,
         token1Address,
@@ -323,7 +324,6 @@ export const handleTokenInputDisplay = async (
         isAToB: boolean,
         overrideAmount: string,
         currentPrice: number,
-        provider: any,
         signer: any,
         token0Address: string,
         token1Address: string,
@@ -337,7 +337,6 @@ export const handleTokenInputDisplay = async (
     ) => Promise<{ amountA: string; amountB: string }>,
     setHideToken0DuringChange: (value: boolean) => void,
     setHideToken1DuringChange: (value: boolean) => void,
-    provider: any,
     signer: any,
     uniswapV3FactoryContract: any,
     getPoolContract: (address: string) => any
@@ -354,7 +353,6 @@ export const handleTokenInputDisplay = async (
             true,
             "0.0001",
             currentPrice,
-            provider,
             signer,
             token0Address,
             token1Address,
@@ -397,7 +395,6 @@ export const handleTokenInputDisplay = async (
             false,
             "0.0001",
             currentPrice,
-            provider,
             signer,
             token0Address,
             token1Address,

@@ -43,7 +43,6 @@ export interface BlockchainState
     sdk: MetaMaskSDK | null
     account: string
     isConnected: boolean
-    provider: ethers.BrowserProvider | null
     signer: ethers.JsonRpcSigner | null
     deploymentAddresses: DeploymentAddresses | null
     contracts: ContractReferences | null
@@ -58,7 +57,6 @@ const initialState: BlockchainState =
     sdk: null,
     account: "",
     isConnected: false,
-    provider: null,
     signer: null,
     deploymentAddresses: null,
     contracts: null,
@@ -326,7 +324,6 @@ export const blockchainSlice = createSlice
             state.status = "idle"
             state.account = action.payload.account
             state.isConnected = true
-            state.provider = action.payload.provider as any
             state.signer = action.payload.signer as any
         }).addCase(connectWallet.rejected, (state, action) => 
         {

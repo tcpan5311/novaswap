@@ -88,7 +88,7 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionCreate() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { provider, signer, isConnected, deploymentAddresses, contracts, cryptocurrencies } = useSelector(blockchainSelector)
+    const { signer, isConnected, deploymentAddresses, contracts, cryptocurrencies } = useSelector(blockchainSelector)
 
     const router = useRouter()
     const viewportRef = useRef<HTMLDivElement>(null)
@@ -255,70 +255,28 @@ export default function PositionCreate()
 
     {/* === END: Core function of dragger and price range === */}
 
+    {/* === START: Core function of validator and token computation === */}
     useDebounceEffect(() => 
     {
         const runAllUpdates = async () => 
         {
-
-            // Step 1: Basic validations
-            if (!selectedToken0 || !selectedToken1 || !fee)
+            if (!selectedToken0 || !selectedToken1 || fee == null) 
             {
                 setIsFirstStepValid(false)
                 setRequireInitialPrice(false)
                 return
             }
-
-            if (!validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee))
-            {
-                setIsFirstStepValid(false)
-                setRequireInitialPrice(false)
-                return
-            }
-
-            // Step 2: Full first step validation
-            const { isValid: firstStepValid, poolExists } = await validateFullFirstStep(
-                selectedToken0.Address,
-                selectedToken1.Address,
-                fee,
-                initialPrice,
-                doesPoolExist
-            )
-
-            setIsFirstStepValid(firstStepValid)
-            setRequireInitialPrice(!poolExists)
-
-            if (!firstStepValid) return
-
             
-            // Step 3: Validate min and max prices
-            if (rangeType === "custom_range") 
-            {
-                await validateMinPrice()
-                await validateMaxPrice()
-            }
+            if (!await performFirstStepValidation()) return
+            if (!await performPriceValidation()) return
 
-            // Step 4: Fetch balances
             fetchBalances(selectedToken0.Address, selectedToken1.Address)
 
-            // Step 5: Get current pool price
             const currentPrice = await getCurrentPoolPrice() ?? 0
+            const { effectiveMinPrice, effectiveMaxPrice } = getEffectiveRange(rangeType, minPrice, maxPrice)
 
-            let effectiveMinPrice: number
-            let effectiveMaxPrice: number
-            
-            if (rangeType === "full_range") 
-            {
-                effectiveMinPrice = tickToPrice(TickMath.MIN_TICK)
-                effectiveMaxPrice = tickToPrice(TickMath.MAX_TICK)
-            } 
-            else 
-            {
-                effectiveMinPrice = minPrice
-                effectiveMaxPrice = maxPrice
-            }
-
-            // Step 6: Update token display
-            await handleTokenInputDisplay(
+            await handleTokenInputDisplay
+            (
                 selectedToken0.Address,
                 selectedToken1.Address,
                 fee,
@@ -328,64 +286,15 @@ export default function PositionCreate()
                 computeTokenAmount,
                 setHideToken0DuringChange,
                 setHideToken1DuringChange,
-                provider,
                 signer,
                 contracts?.UniswapV3FactoryContract,
-                (address: string) => getPoolContract(signer, address) 
+                (address: string) => getPoolContract(signer, address)
             )
 
-            // Step 7: Update token amounts based on last edited field
-            if (lastEditedField === "token0")
-            {
-                await updateTokenAmounts(
-                    true,
-                    token0Amount,
-                    selectedToken0.Address,
-                    selectedToken1.Address,
-                    fee,
-                    effectiveMinPrice,
-                    effectiveMaxPrice,
-                    currentPrice,
-                    computeTokenAmount,
-                    setToken0Amount,
-                    setToken1Amount,
-                    lastEditedField,
-                    token0Amount,
-                    token1Amount,
-                    provider,
-                    signer,
-                    contracts?.UniswapV3FactoryContract,
-                    (address: string) => getPoolContract(signer, address)
-                )
-            }
+            await updateAmountsIfNeeded(effectiveMinPrice, effectiveMaxPrice, currentPrice)
 
-            if (lastEditedField === "token1")
-            {
-                await updateTokenAmounts(
-                    false,
-                    token1Amount,
-                    selectedToken0.Address,
-                    selectedToken1.Address,
-                    fee,
-                    effectiveMinPrice,
-                    effectiveMaxPrice,
-                    currentPrice,
-                    computeTokenAmount,
-                    setToken0Amount,
-                    setToken1Amount,
-                    lastEditedField,
-                    token0Amount,
-                    token1Amount,
-                    provider,
-                    signer,
-                    contracts?.UniswapV3FactoryContract,
-                    (address: string) => getPoolContract(signer, address)
-                )
-            }
-
-            // Step 8: Second step validation
-            const { isValid, errorMessage } = await validateSecondStep(
-                provider,
+            const { isValid, errorMessage } = await validateSecondStep
+            (
                 signer,
                 selectedToken0.Address,
                 selectedToken1.Address,
@@ -403,6 +312,102 @@ export default function PositionCreate()
 
             setIsSecondStepValid(isValid)
             setSecondStepError(errorMessage || "")
+        }
+
+        const performFirstStepValidation = async (): Promise<boolean> => 
+        {
+            if (!selectedToken0 || !selectedToken1 || !fee)
+            {
+                setIsFirstStepValid(false)
+                setRequireInitialPrice(false)
+                return false
+            }
+
+            if (!validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee))
+            {
+                setIsFirstStepValid(false)
+                setRequireInitialPrice(false)
+                return false
+            }
+
+            const { isValid, poolExists } = await validateFullFirstStep
+            (
+                selectedToken0.Address,
+                selectedToken1.Address,
+                fee,
+                initialPrice,
+                doesPoolExist
+            )
+
+            setIsFirstStepValid(isValid)
+            setRequireInitialPrice(!poolExists)
+            return isValid
+        }
+
+        const performPriceValidation = async (): Promise<boolean> => 
+        {
+            if (rangeType !== "custom_range") return true
+            await Promise.all([validateMinPrice(), validateMaxPrice()])
+            return true
+        }
+
+        const getEffectiveRange = (rangeType: string, min: number, max: number) => 
+        ({
+            effectiveMinPrice: rangeType === "full_range" ? tickToPrice(TickMath.MIN_TICK) : min,
+            effectiveMaxPrice: rangeType === "full_range" ? tickToPrice(TickMath.MAX_TICK) : max
+        })
+
+        const updateAmountsIfNeeded = async (min: number, max: number, current: number) => 
+        {
+            if (!selectedToken0 || !selectedToken1 || fee == null) return
+
+            if (lastEditedField === "token0")
+            {
+                await updateTokenAmounts
+                (
+                    true,
+                    token0Amount,
+                    selectedToken0.Address,
+                    selectedToken1.Address,
+                    fee,
+                    min,
+                    max,
+                    current,
+                    computeTokenAmount,
+                    setToken0Amount,
+                    setToken1Amount,
+                    lastEditedField,
+                    token0Amount,
+                    token1Amount,
+                    signer,
+                    contracts?.UniswapV3FactoryContract,
+                    (address: string) => getPoolContract(signer, address)
+                )
+            }
+
+            if (lastEditedField === "token1")
+            {
+                await updateTokenAmounts
+                (
+                    false,
+                    token1Amount,
+                    selectedToken0.Address,
+                    selectedToken1.Address,
+                    fee,
+                    min,
+                    max,
+                    current,
+                    computeTokenAmount,
+                    setToken0Amount,
+                    setToken1Amount,
+                    lastEditedField,
+                    token0Amount,
+                    token1Amount,
+                    signer,
+                    contracts?.UniswapV3FactoryContract,
+                    (address: string) => getPoolContract(signer, address)
+                )
+            }
         }
 
         runAllUpdates()
@@ -423,7 +428,7 @@ export default function PositionCreate()
         isFirstStepValid,
         rangeType 
     ], 500)
-
+    {/* === END: Core function of validator and token computation === */}
 
     const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
     {
@@ -1422,7 +1427,8 @@ export default function PositionCreate()
                                         value={token0Amount}
                                         onChange={async (event) => {
                                         const input = event.currentTarget.value;
-                                        if (/^\d*\.?\d*$/.test(input)) {
+                                        if (/^\d*\.?\d*$/.test(input)) 
+                                        {
                                             setToken0Amount(input);
                                             setLastEditedField("token0");
                                         }
@@ -1455,7 +1461,8 @@ export default function PositionCreate()
                                         value={token1Amount}
                                         onChange={async (event) => {
                                         const input = event.currentTarget.value;
-                                        if (/^\d*\.?\d*$/.test(input)) {
+                                        if (/^\d*\.?\d*$/.test(input)) 
+                                        {
                                             setToken1Amount(input);
                                             setLastEditedField("token1");
                                         }

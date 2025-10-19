@@ -87,7 +87,7 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionDetails() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { account, provider, signer, isConnected, deploymentAddresses, contracts } = useSelector(blockchainSelector)
+    const { account, signer, isConnected, deploymentAddresses, contracts } = useSelector(blockchainSelector)
 
     const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
@@ -251,7 +251,7 @@ export default function PositionDetails()
         const hasFee = selectedPosition?.fee != null
         const hasCurrentPoolPrice = selectedPosition?.currentPrice != null
 
-        if (!provider || !signer || !deploymentAddresses || !hasSelectedPosition || !hasToken0 || !hasToken1 || !hasFee || !hasCurrentPoolPrice) 
+        if (!signer || !deploymentAddresses || !hasSelectedPosition || !hasToken0 || !hasToken1 || !hasFee || !hasCurrentPoolPrice) 
         {
             return
         }
@@ -267,7 +267,6 @@ export default function PositionDetails()
             computeTokenAmount,
             setHideToken0DuringChange,
             setHideToken1DuringChange,
-            provider,
             signer,
             uniswapV3FactoryContract,
             (address: string) => getPoolContract(signer, address) 
@@ -290,7 +289,6 @@ export default function PositionDetails()
             lastEditedField,
             token0Amount,
             token1Amount,
-            provider,
             signer,
             uniswapV3FactoryContract,
             (address: string) => getPoolContract(signer, address) 
@@ -314,7 +312,6 @@ export default function PositionDetails()
                 lastEditedField,
                 token0Amount,
                 token1Amount,
-                provider,
                 signer,
                 uniswapV3FactoryContract,
                 (address: string) => getPoolContract(signer, address) 
@@ -625,6 +622,9 @@ export default function PositionDetails()
                                 <Grid.Col span={4}>
                                     <Text fw={700} size="md" c="dimmed">
                                         Market price
+                                    </Text>
+                                    <Text fw={700}>
+                                        {selectedPosition.currentPrice}
                                     </Text>
                                 </Grid.Col>
     
@@ -980,7 +980,7 @@ export default function PositionDetails()
                     radius="md"
                     className="mt-[5%]"
                     onClick={removeLiquidity}
-                    disabled={!validatePercent(percentInput)}>
+                    disabled={!validatePercent(percentInput.replace('%', ''))}>
                     Remove liquidity
                     </Button>
 

@@ -92,7 +92,7 @@ const handleSwitchToken =
 export default function SwapMain() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const {provider, signer, isConnected, deploymentAddresses, contracts, cryptocurrencies} = useSelector(blockchainSelector)
+    const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies} = useSelector(blockchainSelector)
 
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
@@ -125,14 +125,20 @@ export default function SwapMain()
     
     const handleSwap1Change = (value: string) => 
     {
-        setActiveInput("swap1")
-        setSwapValue1(value)
+        if (/^\d*\.?\d*$/.test(value)) 
+        { 
+            setActiveInput("swap1")
+            setSwapValue1(value)
+        }
     }
 
     const handleSwap2Change = (value: string) => 
     {
-        setActiveInput("swap2")
-        setSwapValue2(value)
+        if (/^\d*\.?\d*$/.test(value)) 
+        { 
+            setActiveInput("swap2")
+            setSwapValue2(value)
+        }
     }
 
     useDebounceEffect(() => 
@@ -147,7 +153,7 @@ export default function SwapMain()
 
     useDebounceEffect(() => 
     {
-        if (!quoterContract || !selectedToken0 || !selectedToken1 || !provider) return
+        if (!quoterContract || !selectedToken0 || !selectedToken1) return
 
         if (activeInput === "swap1" && !swapValue1) 
         {
@@ -208,10 +214,10 @@ export default function SwapMain()
 
         const validateSwap = async () => 
         {
-            if (!provider || !signer) return
+            if (!signer) return
             if (!selectedToken0?.Address || !selectedToken1?.Address) return
 
-            const result = await validateSwapStep(provider, signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
+            const result = await validateSwapStep(signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
 
             setIsSwapValid(result.isValid)
             setSwapValidError(result.error ?? null)
@@ -219,7 +225,7 @@ export default function SwapMain()
 
         validateSwap()
         updateTokenBalance()
-    }, [provider, signer, selectedToken0, selectedToken1, swapValue1, swapValue2])
+    }, [signer, selectedToken0, selectedToken1, swapValue1, swapValue2])
 
     const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: bigint, signer: ethers.Signer) => 
     {
@@ -470,11 +476,16 @@ export default function SwapMain()
                                         className="mt-[10%]"
                                         disabled={!isSwapValid || !hasLiquidity}
                                         onClick={() => {
-                                            if (activeInput === "swap1") {
+                                            if (activeInput === "swap1") 
+                                            {
                                                 swapExactInput()
-                                            } else if (activeInput === "swap2") {
+                                            } 
+                                            else if (activeInput === "swap2") 
+                                            {
                                                 swapExactOutput()
-                                            } else {
+                                            } 
+                                            else 
+                                            {
                                                 console.log("Please enter an amount first.")
                                             }
                                         }}
@@ -520,13 +531,15 @@ export default function SwapMain()
                     placeholder="Search token"
                     leftSection={<IconSearch size={16} />}
                     value={query}
-                    onChange={(event) => {
+                    onChange={(event) => 
+                    {
                         setQuery(event.currentTarget.value)
                         setHovered(-1)
                     }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
-                    {filtered.map((item) => (
+                    {filtered.map((item) => 
+                    (
                         <UnstyledButton
                             key={item.Address}
                             data-list-item
@@ -551,13 +564,15 @@ export default function SwapMain()
                 <Input
                     placeholder="Search token"
                     leftSection={<IconSearch size={16} />}
-                    onChange={(event) => {
+                    onChange={(event) => 
+                    {
                         setQuery(event.currentTarget.value)
                         setHovered(-1)
                     }}
                 />
                 <ScrollArea h={150} type="always" mt="md" viewportRef={viewportRef}>
-                    {filtered.map((item) => (
+                    {filtered.map((item) => 
+                    (
                         <UnstyledButton
                             key={item.Address}
                             data-list-item
