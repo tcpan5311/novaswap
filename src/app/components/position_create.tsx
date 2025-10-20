@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions} from "../redux/blockchain_slice"
+import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances} from "../redux/blockchain_slice"
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select, Badge} from '@mantine/core'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
@@ -88,7 +88,7 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionCreate() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { signer, isConnected, deploymentAddresses, contracts, cryptocurrencies } = useSelector(blockchainSelector)
+    const { signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance } = useSelector(blockchainSelector)
 
     const router = useRouter()
     const viewportRef = useRef<HTMLDivElement>(null)
@@ -150,10 +150,7 @@ export default function PositionCreate()
 
     const [isFirstStepValid, setIsFirstStepValid] = useState(false)
     const [isSecondStepValid, setIsSecondStepValid] = useState(false)
-    const [secondStepError, setSecondStepError] = useState<string>("")
-
-    const [token0Balance, setToken0Balance] = useState<string>("0")
-    const [token1Balance, setToken1Balance] = useState<string>("0")
+    const [secondStepError, setSecondStepError] = useState<string | null>(null)
 
     const [requireInitialPrice, setRequireInitialPrice] = useState<boolean | null>(null)
 
@@ -270,7 +267,13 @@ export default function PositionCreate()
             if (!await performFirstStepValidation()) return
             if (!await performPriceValidation()) return
 
-            fetchBalances(selectedToken0.Address, selectedToken1.Address)
+            if (!selectedToken0 && !selectedToken1) return
+
+            dispatch(fetchBalances
+            ({
+                token0Address: selectedToken0 ? selectedToken0.Address : null,
+                token1Address: selectedToken1 ? selectedToken1.Address : null
+            }))
 
             const currentPrice = await getCurrentPoolPrice() ?? 0
             const { effectiveMinPrice, effectiveMaxPrice } = getEffectiveRange(rangeType, minPrice, maxPrice)
@@ -293,7 +296,7 @@ export default function PositionCreate()
 
             await updateAmountsIfNeeded(effectiveMinPrice, effectiveMaxPrice, currentPrice)
 
-            const { isValid, errorMessage } = await validateSecondStep
+           const finalValidation = await validateSecondStep
             (
                 signer,
                 selectedToken0.Address,
@@ -310,8 +313,8 @@ export default function PositionCreate()
                 (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider)
             )
 
-            setIsSecondStepValid(isValid)
-            setSecondStepError(errorMessage || "")
+            setIsSecondStepValid(finalValidation.isValid)
+            setSecondStepError(finalValidation.errorMessage || "")
         }
 
         const performFirstStepValidation = async (): Promise<boolean> => 
@@ -597,45 +600,6 @@ export default function PositionCreate()
         const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
         const parsedAmount = ethers.parseEther(amount)
         await approveTokenContract.approve(spenderAddress, parsedAmount)
-    }
-
-    const fetchBalances = async (token0Address: string | null, token1Address: string | null) => 
-    {
-        if (!signer) return
-
-        try 
-        {
-            const signerAddress = await signer.getAddress() 
-
-            let balance0 = "0"
-            let displayBalance0 = "0"
-
-            if (token0Address) 
-            {
-                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-                const rawBalance0 = await token0Contract.balanceOf(signerAddress) 
-                const symbol0 = await token0Contract.symbol()
-                balance0 = ethers.formatEther(rawBalance0)
-                displayBalance0 = `${balance0} ${symbol0}`
-            }
-            setToken0Balance(displayBalance0)
-
-            let balance1 = "0"
-            let displayBalance1 = "0"
-            if (token1Address) 
-            {
-                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-                const rawBalance1 = await token1Contract.balanceOf(signerAddress) 
-                const symbol1 = await token1Contract.symbol()
-                balance1 = ethers.formatEther(rawBalance1)
-                displayBalance1 = `${balance1} ${symbol1}`
-            }
-            setToken1Balance(displayBalance1)
-        } 
-        catch (err) 
-        {
-            console.log("Failed to fetch token balances:")
-        }
     }
 
     const findMatchingPosition = async (token0Address: string, token1Address: string, fee: number, lowerTick: number, upperTick: number, loadPositions: () => Promise<PositionData[]>): Promise<{ tokenId: bigint; position: PositionData } | null> => 
@@ -1111,7 +1075,7 @@ export default function PositionCreate()
                                                 readOnly
                                             />
                                             <Text c="#4f0099" size="sm">
-                                                NEAR per ETH
+                                                {tokenSelection.displayToken1Name} per {tokenSelection.displayToken0Name} 
                                             </Text>
                                             </Box>
                                         </Flex>
@@ -1133,7 +1097,7 @@ export default function PositionCreate()
                                                 readOnly
                                             />
                                             <Text c="#4f0099" size="sm">
-                                                NEAR per ETH
+                                                {tokenSelection.displayToken1Name} per {tokenSelection.displayToken0Name} 
                                             </Text>
                                             </Box>
                                         </Flex>
@@ -1150,15 +1114,17 @@ export default function PositionCreate()
 
                                     {!hideToken0DuringChange && (
                                     <Input
+                                        classNames={{ input: "!h-[100px] w-full text-2xl px-4 rounded-2xl" }}
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
                                         value={token0Amount}
                                         onChange={async (event) => {
                                         const input = event.currentTarget.value;
-                                        if (/^\d*\.?\d*$/.test(input)) {
-                                            setToken0Amount(input);
-                                            setLastEditedField("token0");
+                                        if (/^\d*\.?\d*$/.test(input)) 
+                                        {
+                                            setToken0Amount(input)
+                                            setLastEditedField("token0")
                                         }
                                         }}
                                         rightSection={
@@ -1175,23 +1141,22 @@ export default function PositionCreate()
                                         </Stack>
                                         }
                                         rightSectionWidth={200}
-                                        classNames={{
-                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
-                                        }}
                                     />
                                     )}
 
                                     {!hideToken1DuringChange && (
                                     <Input
+                                        classNames={{ input: "!h-[100px] w-full text-2xl px-4 rounded-2xl" }}
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
                                         value={token1Amount}
                                         onChange={async (event) => {
                                         const input = event.currentTarget.value;
-                                        if (/^\d*\.?\d*$/.test(input)) {
-                                            setToken1Amount(input);
-                                            setLastEditedField("token1");
+                                        if (/^\d*\.?\d*$/.test(input)) 
+                                        {
+                                            setToken1Amount(input)
+                                            setLastEditedField("token1")
                                         }
                                         }}
                                         rightSection={
@@ -1208,9 +1173,6 @@ export default function PositionCreate()
                                         </Stack>
                                         }
                                         rightSectionWidth={200}
-                                        classNames={{
-                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
-                                        }}
                                     />
                                     )}
 
@@ -1219,14 +1181,16 @@ export default function PositionCreate()
                                         fullWidth
                                         radius="md"
                                         className="mt-[5%]"
-                                        disabled={!isSecondStepValid}
                                         onClick={addLiquidity}
+                                        disabled={!isSecondStepValid}
                                     >
                                         {isSecondStepValid
-                                        ? "Continue"
+                                        ? "Add Liquidity"
+                                        : secondStepError === "incomplete_fields"
+                                        ? "Incomplete fields"
                                         : secondStepError === "insufficient_tokens"
                                         ? "Insufficient tokens"
-                                        : "Incomplete fields"}
+                                        : "Add Liquidity"}
                                     </Button>
                                     ) : (
                                     <Button
@@ -1334,22 +1298,24 @@ export default function PositionCreate()
                                                 onChange={(event) => {
                                                 const priceInputRegex = /^\d*\.?\d{0,4}$/;
                                                 const input = event.target.value;
-                                                if (input === "") {
-                                                    setMinPriceInput("");
-                                                    setMinPrice(0);
-                                                    return;
+                                                if (input === "") 
+                                                {
+                                                    setMinPriceInput("")
+                                                    setMinPrice(0)
+                                                    return
                                                 }
                                                 if (priceInputRegex.test(input)) {
-                                                    setMinPriceInput(input);
-                                                    const parsedInput = validatePriceInput(input, 18);
-                                                    if (parsedInput !== null) {
-                                                    setMinPrice(parsedInput);
+                                                    setMinPriceInput(input)
+                                                    const parsedInput = validatePriceInput(input, 18)
+                                                    if (parsedInput !== null) 
+                                                    {
+                                                        setMinPrice(parsedInput)
                                                     }
                                                 }
                                                 }}
                                             />
                                             <Text c="#4f0099" size="sm">
-                                                NEAR per ETH
+                                                {tokenSelection.displayToken1Name} per {tokenSelection.displayToken0Name} 
                                             </Text>
                                             </Box>
 
@@ -1378,24 +1344,27 @@ export default function PositionCreate()
                                                 size="xl"
                                                 value={maxPriceInput}
                                                 onChange={(event) => {
-                                                const priceInputRegex = /^\d*\.?\d{0,4}$/;
+                                                const priceInputRegex = /^\d*\.?\d{0,4}$/
                                                 const input = event.target.value;
-                                                if (input === "") {
-                                                    setMaxPriceInput("");
-                                                    setMaxPrice(0);
-                                                    return;
+                                                if (input === "") 
+                                                {
+                                                    setMaxPriceInput("")
+                                                    setMaxPrice(0)
+                                                    return
                                                 }
-                                                if (priceInputRegex.test(input)) {
-                                                    setMaxPriceInput(input);
-                                                    const parsedInput = validatePriceInput(input, 18);
-                                                    if (parsedInput !== null) {
-                                                    setMaxPrice(parsedInput);
+                                                if (priceInputRegex.test(input)) 
+                                                {
+                                                    setMaxPriceInput(input)
+                                                    const parsedInput = validatePriceInput(input, 18)
+                                                    if (parsedInput !== null) 
+                                                    {
+                                                        setMaxPrice(parsedInput)
                                                     }
                                                 }
                                                 }}
                                             />
                                             <Text c="#4f0099" size="sm">
-                                                NEAR per ETH
+                                                {tokenSelection.displayToken1Name} per {tokenSelection.displayToken0Name} 
                                             </Text>
                                             </Box>
 
@@ -1421,6 +1390,7 @@ export default function PositionCreate()
 
                                     {!hideToken0DuringChange && (
                                     <Input
+                                        classNames={{ input: "!h-[100px] w-full text-2xl px-4 rounded-2xl" }}
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
@@ -1429,8 +1399,8 @@ export default function PositionCreate()
                                         const input = event.currentTarget.value;
                                         if (/^\d*\.?\d*$/.test(input)) 
                                         {
-                                            setToken0Amount(input);
-                                            setLastEditedField("token0");
+                                            setToken0Amount(input)
+                                            setLastEditedField("token0")
                                         }
                                         }}
                                         rightSection={
@@ -1447,14 +1417,12 @@ export default function PositionCreate()
                                         </Stack>
                                         }
                                         rightSectionWidth={200}
-                                        classNames={{
-                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
-                                        }}
                                     />
                                     )}
 
                                     {!hideToken1DuringChange && (
                                     <Input
+                                        classNames={{ input: "!h-[100px] w-full text-2xl px-4 rounded-2xl" }}
                                         mt={20}
                                         size="xl"
                                         placeholder="0"
@@ -1463,8 +1431,8 @@ export default function PositionCreate()
                                         const input = event.currentTarget.value;
                                         if (/^\d*\.?\d*$/.test(input)) 
                                         {
-                                            setToken1Amount(input);
-                                            setLastEditedField("token1");
+                                            setToken1Amount(input)
+                                            setLastEditedField("token1")
                                         }
                                         }}
                                         rightSection={
@@ -1481,9 +1449,6 @@ export default function PositionCreate()
                                         </Stack>
                                         }
                                         rightSectionWidth={200}
-                                        classNames={{
-                                        input: "h-[90px] w-full text-2xl px-4 rounded-2xl",
-                                        }}
                                     />
                                     )}
 
@@ -1492,14 +1457,16 @@ export default function PositionCreate()
                                         fullWidth
                                         radius="md"
                                         className="mt-[5%]"
-                                        disabled={!isSecondStepValid}
                                         onClick={addLiquidity}
+                                        disabled={!isSecondStepValid}
                                     >
                                         {isSecondStepValid
-                                        ? "Continue"
+                                        ? "Add Liquidity"
+                                        : secondStepError === "incomplete_fields"
+                                        ? "Incomplete fields"
                                         : secondStepError === "insufficient_tokens"
                                         ? "Insufficient tokens"
-                                        : "Incomplete fields"}
+                                        : "Add Liquidity"}
                                     </Button>
                                     ) : (
                                     <Button

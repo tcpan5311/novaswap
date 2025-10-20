@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from 'react-redux'
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { connectWallet, fetchDeploymentData, loadBlockchainData } from '../redux/blockchain_slice'
+import { connectWallet, fetchDeploymentData, loadBlockchainData, fetchBalances } from '../redux/blockchain_slice'
 import { useEffect } from 'react'
 import { MantineProvider} from '@mantine/core'
 import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
@@ -92,7 +92,7 @@ const handleSwitchToken =
 export default function SwapMain() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies} = useSelector(blockchainSelector)
+    const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance} = useSelector(blockchainSelector)
 
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
@@ -103,10 +103,7 @@ export default function SwapMain()
     const [hasLiquidity, setHasLiquidity] = useState(false)
 
     const [isSwapValid, setIsSwapValid] = useState(false)
-    const [swapValidError, setSwapValidError] = useState<"incomplete_fields" | "insufficient_tokens" | null>(null)
-
-    const [token0Balance, setToken0Balance] = useState<string>("0")
-    const [token1Balance, setToken1Balance] = useState<string>("0")
+    const [swapValidError, setSwapValidError] = useState<string | null>(null)
 
     const [selectedTab, setSelectedTab] = useState('Swap')
     const isSmallScreen = useMediaQuery('(max-width: 768px)')
@@ -208,8 +205,12 @@ export default function SwapMain()
     {
         const updateTokenBalance = async() =>
         {
-            if (!selectedToken0?.Address && !selectedToken1?.Address) return
-            await fetchBalances(selectedToken0?.Address ?? null, selectedToken1?.Address ?? null)
+            if (!selectedToken0 && !selectedToken1) return
+            dispatch(fetchBalances
+            ({
+                token0Address: selectedToken0 ? selectedToken0.Address : null,
+                token1Address: selectedToken1 ? selectedToken1.Address : null
+            }))
         }
 
         const validateSwap = async () => 
@@ -217,10 +218,10 @@ export default function SwapMain()
             if (!signer) return
             if (!selectedToken0?.Address || !selectedToken1?.Address) return
 
-            const result = await validateSwapStep(signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
+            const finalValidation = await validateSwapStep(signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
 
-            setIsSwapValid(result.isValid)
-            setSwapValidError(result.error ?? null)
+            setIsSwapValid(finalValidation.isValid)
+            setSwapValidError(finalValidation.errorMessage || "")
         }
 
         validateSwap()
@@ -236,52 +237,6 @@ export default function SwapMain()
 
         const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
         await approveTokenContract.approve(spenderAddress, amount)
-    }
-
-    const fetchBalances = async (token0Address: string | null, token1Address: string | null) => 
-    {
-        if (!signer) return
-
-        try 
-        {
-            const signerAddress = await signer.getAddress()
-
-            if (token0Address) 
-            {
-                const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-                const [rawBalance0, symbol0, decimals0] = await Promise.all([
-                    token0Contract.balanceOf(signerAddress),
-                    token0Contract.symbol(),
-                    token0Contract.decimals()
-                ])
-                const balance0 = ethers.formatUnits(rawBalance0, decimals0)
-                setToken0Balance(`${balance0} ${symbol0}`)
-            } 
-            else 
-            {
-                setToken0Balance("0")
-            }
-
-            if (token1Address) 
-            {
-                const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-                const [rawBalance1, symbol1, decimals1] = await Promise.all([
-                    token1Contract.balanceOf(signerAddress),
-                    token1Contract.symbol(),
-                    token1Contract.decimals()
-                ])
-                const balance1 = ethers.formatUnits(rawBalance1, decimals1)
-                setToken1Balance(`${balance1} ${symbol1}`)
-            } 
-            else 
-            {
-                setToken1Balance("0")
-            }
-        } 
-        catch (err) 
-        {
-            console.error("Failed to fetch token balances:", err)
-        }
     }
 
     const swapExactInput = async () => 

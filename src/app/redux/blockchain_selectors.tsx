@@ -10,7 +10,10 @@ export const blockchainSelector = createSelector
     (state: RootState) => state.blockchain.contracts,
     (state: RootState) => state.blockchain.positions,
     (state: RootState) => state.blockchain.cryptocurrencies,
-    (account, signer, isConnected, deploymentAddresses, contracts, positions, cryptocurrencies) => 
+    (state: RootState) => state.blockchain.token0Balance,
+    (state: RootState) => state.blockchain.token1Balance,
+
+    (account, signer, isConnected, deploymentAddresses, contracts, positions, cryptocurrencies, token0Balance, token1Balance) => 
     ({
         account,
         signer,
@@ -18,6 +21,8 @@ export const blockchainSelector = createSelector
         deploymentAddresses,
         contracts,
         positions,
-        cryptocurrencies
+        cryptocurrencies,
+        token0Balance,
+        token1Balance
     })
 )

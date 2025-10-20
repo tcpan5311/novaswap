@@ -50,6 +50,8 @@ export interface BlockchainState
     error?: string | null
     cryptocurrencies?: { Label: string; Address: string }[]
     positions?: PositionData[]
+    token0Balance?: string
+    token1Balance?: string
 }
 
 const initialState: BlockchainState = 
@@ -64,6 +66,8 @@ const initialState: BlockchainState =
     error: null,
     cryptocurrencies: [],
     positions: [],
+    token0Balance: "0",
+    token1Balance: "0",
 }
 
 export const initializeMetaMaskSDK = createAsyncThunk("blockchain/initSDK", async () => 
@@ -300,6 +304,42 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
     }
 })
 
+export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Balance: string }, { token0Address: string | null; token1Address: string | null }, { state: { blockchain: BlockchainState } }>("blockchain/fetchBalances", async ({ token0Address, token1Address }, { getState, rejectWithValue }) => 
+{
+    const { signer } = getState().blockchain
+    if (!signer) return rejectWithValue("Signer not available")
+
+    try 
+    {
+        const signerAddress = await signer.getAddress()
+
+        let token0Balance = "0"
+        let token1Balance = "0"
+
+        if (token0Address) 
+        {
+            const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+            const rawBalance0 = await token0Contract.balanceOf(signerAddress)
+            const symbol0 = await token0Contract.symbol()
+            token0Balance = `${ethers.formatEther(rawBalance0)} ${symbol0}`
+        }
+
+        if (token1Address) 
+        {
+            const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+            const rawBalance1 = await token1Contract.balanceOf(signerAddress)
+            const symbol1 = await token1Contract.symbol()
+            token1Balance = `${ethers.formatEther(rawBalance1)} ${symbol1}`
+        }
+        
+        return { token0Balance, token1Balance }
+    } 
+    catch (err: any) 
+    {
+        return rejectWithValue(err.message)
+    }
+})
+
 export const blockchainSlice = createSlice
 ({
     name: "blockchain",
@@ -343,6 +383,10 @@ export const blockchainSlice = createSlice
         }).addCase(loadBlockchainPositions.fulfilled, (state, action) => 
         {
             state.positions = action.payload.positions
+        }).addCase(fetchBalances.fulfilled, (state, action) => 
+        {
+            state.token0Balance = action.payload.token0Balance
+            state.token1Balance = action.payload.token1Balance
         })
     },
 })

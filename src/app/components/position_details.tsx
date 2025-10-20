@@ -2,15 +2,15 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { getPoolContract, connectWallet } from '../redux/blockchain_slice'
+import { connectWallet, getPoolContract, fetchBalances } from '../redux/blockchain_slice'
 import { useState, useEffect } from 'react'
-import { Grid, Tabs, Button, Group, Box, Text, Flex, Card, Input, Table, TextInput, UnstyledButton, Breadcrumbs, Badge, ScrollArea, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
+import { Grid, Stack, Tabs, Button, Group, Box, Text, Flex, Card, Input, Badge, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { ethers, isAddress } from 'ethers'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
-import { Token, CurrencyAmount} from '@uniswap/sdk-core'
+import { Token } from '@uniswap/sdk-core'
 import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
@@ -87,7 +87,7 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionDetails() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { account, signer, isConnected, deploymentAddresses, contracts } = useSelector(blockchainSelector)
+    const { account, signer, isConnected, deploymentAddresses, contracts, token0Balance, token1Balance } = useSelector(blockchainSelector)
 
     const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
@@ -104,6 +104,10 @@ export default function PositionDetails()
 
     const [token0Amount, setToken0Amount] = useState<string>('')
     const [token1Amount, setToken1Amount] = useState<string>('')
+    const [isAmountValid, setIsAmountValid] = useState(true)
+    const [amountError, setAmountError] = useState<string | null>(null)
+    const [isPercentValid, setIsPercentValid] = useState(false)
+    const [percentError, setPercentError] = useState<string | null>(null)
     
     const [lastEditedField, setLastEditedField] = useState<"token0" | "token1" | null>(null)
 
@@ -128,6 +132,7 @@ export default function PositionDetails()
     const open2 = () => 
     {
         originalOpen2()
+        runAllUpdates()
     }
 
     const close2 = () => 
@@ -243,6 +248,33 @@ export default function PositionDetails()
         }
         return null
     }
+
+    useEffect(() => 
+    {
+        const tokenParam = searchParams.get("token")
+        if (!tokenParam) return
+
+        const fetchPosition = async () => 
+        {
+            const { tokenId, error } = await fetchVerifyToken(tokenParam)
+
+            if(!tokenId || error)
+            {
+                router.replace('/position_main')
+                return
+            }
+            else
+            {
+                setTokenId(BigInt(tokenId))
+                const data = await loadPositionDetails(BigInt(tokenId))
+                setSelectedPosition(data)
+            }
+
+        }
+
+    fetchPosition()
+    }, [searchParams, tokenId, signer, contracts, deploymentAddresses])
+
     const runAllUpdates = async () => 
     {
         const hasSelectedPosition = selectedPosition != null
@@ -255,6 +287,13 @@ export default function PositionDetails()
         {
             return
         }
+
+        if (!selectedPosition.token0Address && !selectedPosition.token1Address) return
+        dispatch(fetchBalances
+        ({
+            token0Address: selectedPosition.token0Address,
+            token1Address: selectedPosition.token1Address
+        }))
 
         await handleTokenInputDisplay
         (
@@ -317,43 +356,29 @@ export default function PositionDetails()
                 (address: string) => getPoolContract(signer, address) 
             )
         }
+
+        const tokenAmountValidation = await validateAmounts
+        (
+            signer,
+            selectedPosition.token0Address,
+            selectedPosition.token1Address,
+            token0Amount,
+            token1Amount,
+            (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider)
+        )
+
+        setIsAmountValid(tokenAmountValidation.isValid)
+        setAmountError(tokenAmountValidation.errorMessage || "")
+
+        const percentValidation = validatePercent(percentInput.replace('%', ''))
+        setIsPercentValid(percentValidation.isValid)
+        setPercentError(percentValidation.errorMessage || "")
     }
-
-    useEffect(() => 
-    {
-        const tokenParam = searchParams.get("token")
-        if (!tokenParam) return
-
-        const fetchPosition = async () => 
-        {
-            const { tokenId, error } = await fetchVerifyToken(tokenParam)
-
-            if(!tokenId || error)
-            {
-                router.replace('/position_main')
-                return
-            }
-            else
-            {
-                setTokenId(BigInt(tokenId))
-                const data = await loadPositionDetails(BigInt(tokenId))
-                setSelectedPosition(data)
-            }
-
-        }
-
-    fetchPosition()
-    }, [searchParams, tokenId, signer, contracts, deploymentAddresses])
-
-    // useDebounceEffect(() => 
-    // {
-    //     fetchPosition()
-    // }, [tokenId, signer, contracts, deploymentAddresses], 500)
 
     useDebounceEffect(() => 
     {
         runAllUpdates()
-    }, [signer, contracts, deploymentAddresses, token0Amount, token1Amount, lastEditedField], 500)
+    }, [signer, contracts, deploymentAddresses, token0Amount, token1Amount, lastEditedField, percentInput], 250)
 
     const getRangeStatus = (tick: number, tickLower: number, tickUpper: number) => 
     {
@@ -756,6 +781,7 @@ export default function PositionDetails()
 
                     {!hideToken0DuringChange && (
                         <Input
+                        classNames={{ input: "!h-[100px]" }}
                         mt={20}
                         size="xl"
                         placeholder="0"
@@ -771,21 +797,25 @@ export default function PositionDetails()
                         }}
                         rightSection=
                         {
-                            <Group align="center">
-                                <Text>
-                                {selectedPosition.token0} 
-                                </Text>
+                            <Stack gap={0} align="start">
+                                <Group align="center">
+                                <Text>{selectedPosition.token0} </Text>
                                 <ActionIcon radius="xl">
-                                <IconCoinFilled size={40} />
+                                    <IconCoinFilled size={40} />
                                 </ActionIcon>
-                            </Group>
+                                </Group>
+                                <Text className="break-words" size="sm" c="dimmed" mt={5}>
+                                {token0Balance}
+                                </Text>
+                            </Stack>
                         }
-                        rightSectionWidth={100}
+                        rightSectionWidth={200}
                         />
                     )}
 
                     {!hideToken1DuringChange && (
                         <Input
+                        classNames={{ input: "!h-[100px]" }}
                         mt={20}
                         size="xl"
                         placeholder="0"
@@ -801,16 +831,19 @@ export default function PositionDetails()
                         }}
                         rightSection=
                         {
-                            <Group align="center">
-                                <Text>
-                                {selectedPosition.token1} 
-                                </Text>
+                            <Stack gap={0} align="start">
+                                <Group align="center">
+                                <Text>{selectedPosition.token1} </Text>
                                 <ActionIcon radius="xl">
-                                <IconCoinFilled size={40} />
+                                    <IconCoinFilled size={40} />
                                 </ActionIcon>
-                            </Group>
+                                </Group>
+                                <Text className="break-words" size="sm" c="dimmed" mt={5}>
+                                {token1Balance}
+                                </Text>
+                            </Stack>
                         }
-                        rightSectionWidth={100}
+                        rightSectionWidth={200}
                         />
                     )}
 
@@ -834,14 +867,32 @@ export default function PositionDetails()
                         </Group>
                     </Box>
 
+                    {isConnected ? (
                     <Button
-                    fullWidth
-                    radius="md"
-                    className="mt-[5%]"
-                    onClick={addLiquidity}
-                    disabled={!validateAmounts(token0Amount, token1Amount)}>
-                    Add liquidity
+                        fullWidth
+                        radius="md"
+                        className="mt-[5%]"
+                        onClick={addLiquidity}
+                        disabled={!isAmountValid}
+                    >
+                        {isAmountValid
+                        ? "Add Liquidity"
+                        : amountError === "incomplete_fields"
+                        ? "Incomplete fields"
+                        : amountError === "insufficient_tokens"
+                        ? "Insufficient tokens"
+                        : "Add Liquidity"}
                     </Button>
+                    ) : (
+                    <Button
+                        fullWidth
+                        radius="md"
+                        className="mt-[5%]"
+                        onClick={() => dispatch(connectWallet())}
+                    >
+                        Connect Wallet
+                    </Button>
+                    )}
 
                 </Modal>
 
@@ -980,8 +1031,14 @@ export default function PositionDetails()
                     radius="md"
                     className="mt-[5%]"
                     onClick={removeLiquidity}
-                    disabled={!validatePercent(percentInput.replace('%', ''))}>
-                    Remove liquidity
+                    disabled={!isPercentValid}>
+                    {isPercentValid ? 
+                    "Remove liquidity" :
+                    percentError === "incomplete_fields" 
+                    ? "Incomplete fields" :
+                    percentError === "invalid_percent" 
+                    ? "Invalid percent" :
+                    "Remove liquidity"}
                     </Button>
 
                 </Modal>
