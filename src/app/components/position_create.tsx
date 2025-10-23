@@ -271,8 +271,8 @@ export default function PositionCreate()
 
             dispatch(fetchBalances
             ({
-                token0Address: selectedToken0 ? selectedToken0.Address : null,
-                token1Address: selectedToken1 ? selectedToken1.Address : null
+                token0Address: selectedToken0?.Address,
+                token1Address: selectedToken1?.Address
             }))
 
             const currentPrice = await getCurrentPoolPrice() ?? 0

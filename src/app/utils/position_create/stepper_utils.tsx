@@ -1,7 +1,7 @@
 type Setters = 
 {
     setStepActive: (val: number) => void
-    setHighestStepVisited?: (fn: (prev: number) => number) => void
+    setHighestStepVisited: (fn: (prev: number) => number) => void
     setSelectedToken0: (val: any) => void
     setSelectedToken1: (val: any) => void
     setFee: (val: any) => void
@@ -74,7 +74,15 @@ export const processStepChange = async (direction: 'next' | 'back', stepActive: 
 {
     const { setStepActive, setHighestStepVisited } = setters
 
-    const delta = direction === 'next' ? 1 : -1
+    let delta
+    if (direction === 'next') 
+    {
+        delta = 1
+    } 
+    else 
+    {
+        delta = -1
+    }
     const nextStep = stepActive + delta
     
     if (nextStep < 0 || nextStep > 2) return
@@ -82,9 +90,21 @@ export const processStepChange = async (direction: 'next' | 'back', stepActive: 
     if (direction === 'back') resetFormState(setters)
 
     setStepActive(nextStep)
-    setHighestStepVisited?.(prev => Math.max(prev, nextStep))
+    if (setHighestStepVisited) 
+    {
+        setHighestStepVisited(prev => Math.max(prev, nextStep))
+    }
 
-    const currentPrice = (await getCurrentPoolPrice()) ?? 0
+    const poolPrice = (await getCurrentPoolPrice())
+    let currentPrice
+    if (poolPrice !== null && poolPrice !== undefined) 
+    {
+        currentPrice = poolPrice
+    } 
+    else 
+    {
+        currentPrice = 0
+    }
     const minPrice = Math.floor(currentPrice * 0.85)
     const maxPrice = Math.ceil(currentPrice * 1.15)
 

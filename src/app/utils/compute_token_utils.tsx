@@ -6,26 +6,26 @@ import JSBI from 'jsbi'
 
 export type PositionData = 
 {
-  tokenId: bigint
-  token0Address: string
-  token1Address: string
-  token0: string
-  token1: string
-  fee: number
-  pool: string
-  tickLower: number
-  tickUpper: number
-  minPrice: number,
-  maxPrice: number
-  currentTick: number
-  liquidity: bigint
-  currentPrice: number
-  feeGrowthInside0LastX128: bigint
-  feeGrowthInside1LastX128: bigint
-  tokensOwed0: bigint
-  tokensOwed1: bigint
-  token0Amount0: bigint
-  token1Amount1: bigint
+    tokenId: bigint
+    token0Address: string
+    token1Address: string
+    token0: string
+    token1: string
+    fee: number
+    pool: string
+    tickLower: number
+    tickUpper: number
+    minPrice: number,
+    maxPrice: number
+    currentTick: number
+    liquidity: bigint
+    currentPrice: number
+    feeGrowthInside0LastX128: bigint
+    feeGrowthInside1LastX128: bigint
+    tokensOwed0: bigint
+    tokensOwed1: bigint
+    token0Amount0: bigint
+    token1Amount1: bigint
 }
 
 //Helper functions
@@ -64,10 +64,10 @@ export const priceToTick = (price: number) => TickMath.getTickAtSqrtRatio(priceT
 
 export const tickToPrice = (tick: number): number => 
 {
-const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick)
-const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
-const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
-return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
+    const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick)
+    const numerator = JSBI.multiply(sqrtPriceX96, sqrtPriceX96)
+    const denominator = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(192))
+    return Number(JSBI.toNumber(numerator)) / Number(JSBI.toNumber(denominator))
 }
 
 export const roundIfCloseToWhole = (amountStr: string): string => 
@@ -126,7 +126,7 @@ export const computeTokenAmount = async (
         new Token(chainId, token1Address, Number(decimalB), symB)
     ]
 
-    const poolAddress = await uniswapV3FactoryContract?.getPoolAddress(token0Address, token1Address, fee)
+    const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
     const poolCallContract = getPoolContract(poolAddress)
 
     let pool: Pool
@@ -141,21 +141,21 @@ export const computeTokenAmount = async (
         const sqrtPriceX96 = slot0.sqrtPriceX96.toString()
         const currentTick = slot0.tick
 
-        pool = new Pool(tokenA, tokenB, fee ?? 0, sqrtPriceX96, liquidity.toString(), Number(currentTick))
+        pool = new Pool(tokenA, tokenB, fee, sqrtPriceX96, liquidity.toString(), Number(currentTick))
 
     } 
     catch 
     {
-        const sqrtPriceX96 = encodeSqrtRatioX96(ethers.parseUnits((currentPrice ?? 0).toString(), decimalA).toString(), ethers.parseUnits('1', decimalB).toString()).toString()
+        const sqrtPriceX96 = encodeSqrtRatioX96(ethers.parseUnits((currentPrice).toString(), decimalA).toString(), ethers.parseUnits('1', decimalB).toString()).toString()
 
         pool = new Pool
         (
             tokenA,
             tokenB,
-            fee ?? 0,
+            fee,
             sqrtPriceX96,
             '0',
-            priceToTick(currentPrice ?? 0)
+            priceToTick(currentPrice)
         )
     }
 
@@ -190,10 +190,11 @@ export const computeTokenAmount = async (
     {
         if (isAToB) 
         {
-            const amountStr = overrideAmount ?? token0Amount
+            const amountStr = overrideAmount || token0Amount
             amountTokenA = getAmount(amountStr, tokenA, decimalA)
 
-            const position = Position.fromAmount0({
+            const position = Position.fromAmount0
+            ({
                 pool,
                 tickLower,
                 tickUpper,
@@ -205,7 +206,7 @@ export const computeTokenAmount = async (
         } 
         else 
         {
-            const amountStr = overrideAmount ?? token1Amount
+            const amountStr = overrideAmount || token1Amount
             amountTokenB = getAmount(amountStr, tokenB, decimalB)
 
             const position = Position.fromAmount1
@@ -365,8 +366,8 @@ export const handleTokenInputDisplay = async (
             getPoolContract
         )
 
-        const amountA = parseFloat(resultAtoB?.amountA ?? "0")
-        const amountB = parseFloat(resultAtoB?.amountB ?? "0")
+        const amountA = parseFloat(resultAtoB.amountA || "0")
+        const amountB = parseFloat(resultAtoB.amountB || "0")
 
         if (amountA >= threshold && amountB < threshold) 
         {
@@ -407,8 +408,8 @@ export const handleTokenInputDisplay = async (
             getPoolContract
         )
 
-        const reverseAmountA = parseFloat(resultBtoA?.amountA ?? "0")
-        const reverseAmountB = parseFloat(resultBtoA?.amountB ?? "0")
+        const reverseAmountA = parseFloat(resultBtoA.amountA || "0")
+        const reverseAmountB = parseFloat(resultBtoA.amountB || "0")
 
         if (reverseAmountB >= threshold && reverseAmountA < threshold) 
         {
@@ -440,5 +441,3 @@ export const handleTokenInputDisplay = async (
         console.log(error)
     }
 }
-
-

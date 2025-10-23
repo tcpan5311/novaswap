@@ -7,7 +7,7 @@ import { ethers } from "ethers"
 import { Pool, Position } from '@uniswap/v3-sdk'
 import { Token } from '@uniswap/sdk-core'
 import { sqrtPToPriceNumber, tickToPrice} from '../utils/compute_token_utils'
-
+import { current } from "immer"
 
 import ERC20Mintable from "../../../contracts/ERC20Mintable.json"
 import UniswapV3Factory from "../../../contracts/UniswapV3Factory.json"
@@ -29,29 +29,29 @@ export interface DeploymentAddresses
 
 export interface ContractReferences 
 {
-    EthereumContract?: ethers.Contract
-    USDCContract?: ethers.Contract
-    UniswapContract?: ethers.Contract
-    UniswapV3FactoryContract?: ethers.Contract
-    UniswapV3ManagerContract?: ethers.Contract
-    UniswapV3NFTManagerContract?: ethers.Contract
-    UniswapV3QuoterContract?: ethers.Contract
+    EthereumContract: ethers.Contract | null
+    USDCContract: ethers.Contract | null
+    UniswapContract: ethers.Contract | null
+    UniswapV3FactoryContract: ethers.Contract | null
+    UniswapV3ManagerContract: ethers.Contract | null
+    UniswapV3NFTManagerContract: ethers.Contract | null
+    UniswapV3QuoterContract: ethers.Contract | null
 }
 
 export interface BlockchainState 
 {
-    sdk: MetaMaskSDK | null
+    sdk: MetaMaskSDK | null | undefined
     account: string
     isConnected: boolean
     signer: ethers.JsonRpcSigner | null
     deploymentAddresses: DeploymentAddresses | null
-    contracts: ContractReferences | null
+    contracts: ContractReferences
     status: "idle" | "loading" | "failed"
-    error?: string | null
-    cryptocurrencies?: { Label: string; Address: string }[]
-    positions?: PositionData[]
-    token0Balance?: string
-    token1Balance?: string
+    error: string | null
+    cryptocurrencies: { Label: string; Address: string }[]
+    positions: PositionData[]
+    token0Balance: string
+    token1Balance: string
 }
 
 const initialState: BlockchainState = 
@@ -61,7 +61,16 @@ const initialState: BlockchainState =
     isConnected: false,
     signer: null,
     deploymentAddresses: null,
-    contracts: null,
+    contracts: 
+    {
+        EthereumContract: null,
+        USDCContract: null,
+        UniswapContract: null,
+        UniswapV3FactoryContract: null,
+        UniswapV3ManagerContract: null,
+        UniswapV3NFTManagerContract: null,
+        UniswapV3QuoterContract: null,
+    },
     status: "idle",
     error: null,
     cryptocurrencies: [],
@@ -76,7 +85,7 @@ export const initializeMetaMaskSDK = createAsyncThunk("blockchain/initSDK", asyn
     return sdk
 })
 
-export const connectWallet = createAsyncThunk<{ account: string; provider: ethers.BrowserProvider; signer: ethers.JsonRpcSigner }, void, { state: { blockchain: BlockchainState }; dispatch: AppDispatch }>("blockchain/connectWallet", async (_, { getState, dispatch, rejectWithValue }) => 
+export const connectWallet = createAsyncThunk<{ account: string; provider: ethers.BrowserProvider; signer: ethers.JsonRpcSigner }, void, { state: { blockchain: BlockchainState }; dispatch: AppDispatch }>("blockchain/connectWallet", async (_, { getState, rejectWithValue }) => 
 {
     try 
     {
@@ -92,9 +101,13 @@ export const connectWallet = createAsyncThunk<{ account: string; provider: ether
 
         return { account: formatted, provider: ethProvider, signer: ethSigner }
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
@@ -104,11 +117,15 @@ export const disconnectWallet = createAsyncThunk<boolean, void, { state: { block
     {
         const sdk = getState().blockchain.sdk
         if (sdk) await sdk.terminate()
-            return true
+        return true
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
@@ -144,9 +161,13 @@ export const fetchDeploymentData = createAsyncThunk<{ deploymentAddresses: Deplo
 
         return { deploymentAddresses: data, contracts }
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
@@ -155,49 +176,33 @@ export const loadBlockchainData = createAsyncThunk<{ cryptocurrencies: { Label: 
     try {
         const { signer, deploymentAddresses, contracts } = getState().blockchain
 
-        if (!signer || !deploymentAddresses || !contracts)
-        throw new Error("Missing blockchain connection or contracts")
+        if (!signer || !deploymentAddresses) throw new Error("Missing blockchain connection or contracts")
 
-        const 
-        [
-            ethereumName,
-            ethereumSymbol,
-            usdcName,
-            usdcSymbol,
-            uniswapName,
-            uniswapSymbol,
-        ] 
-        = await Promise.all
-        ([
-            contracts.EthereumContract?.name(),
-            contracts.EthereumContract?.symbol(),
-            contracts.USDCContract?.name(),
-            contracts.USDCContract?.symbol(),
-            contracts.UniswapContract?.name(),
-            contracts.UniswapContract?.symbol(),
-        ])
+        if (!contracts.EthereumContract || !contracts.USDCContract || !contracts.UniswapContract) throw new Error("Token contracts not initialized")
+
+        const ethereumName = await contracts.EthereumContract.name()
+        const ethereumSymbol = await contracts.EthereumContract.symbol()
+        const usdcName = await contracts.USDCContract.name()
+        const usdcSymbol = await contracts.USDCContract.symbol()
+        const uniswapName = await contracts.UniswapContract.name()
+        const uniswapSymbol = await contracts.UniswapContract.symbol()
 
         const cryptocurrencies = 
         [
-            {
-                Label: `${ethereumName} (${ethereumSymbol})`,
-                Address: deploymentAddresses.EthereumAddress,
-            },
-            {
-                Label: `${usdcName} (${usdcSymbol})`,
-                Address: deploymentAddresses.USDCAddress,
-            },
-            {
-                Label: `${uniswapName} (${uniswapSymbol})`,
-                Address: deploymentAddresses.UniswapAddress,
-            },
+            { Label: `${ethereumName} (${ethereumSymbol})`, Address: deploymentAddresses.EthereumAddress },
+            { Label: `${usdcName} (${usdcSymbol})`, Address: deploymentAddresses.USDCAddress },
+            { Label: `${uniswapName} (${uniswapSymbol})`, Address: deploymentAddresses.UniswapAddress },
         ]
 
         return { cryptocurrencies }
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
@@ -206,10 +211,11 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
     try 
     {
         const { signer, deploymentAddresses, contracts } = getState().blockchain
-        if (!signer || !deploymentAddresses || !contracts?.UniswapV3NFTManagerContract)
-        throw new Error("Missing signer or contracts")
+        if (!signer || !deploymentAddresses) throw new Error("Missing signer or contracts")
 
         const manager = contracts.UniswapV3NFTManagerContract
+        if (!manager) throw new Error("UniswapV3NFTManagerContract not initialized")
+
         const address = await signer.getAddress()
         const totalSupply: bigint = await manager.totalSupply()
         const allPositions: PositionData[] = []
@@ -225,24 +231,13 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
                 const poolAddress = extracted.pool
 
                 const pool = new ethers.Contract(poolAddress, UniswapV3Pool.abi, signer)
-                const [token0Address, token1Address, feeRaw] = await Promise.all
-                ([
-                    pool.token0(),
-                    pool.token1(),
-                    pool.fee(),
-                ])
+                const [token0Address, token1Address, feeRaw] = await Promise.all([pool.token0(), pool.token1(), pool.fee()])
                 const fee = Number(feeRaw)
 
                 const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
                 const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
 
-                const [symbol0, symbol1, decimals0, decimals1] = await Promise.all
-                ([
-                    token0Contract.symbol(),
-                    token1Contract.symbol(),
-                    token0Contract.decimals(),
-                    token1Contract.decimals(),
-                ])
+                const [symbol0, symbol1, decimals0, decimals1] = await Promise.all([token0Contract.symbol(), token1Contract.symbol(), token0Contract.decimals(), token1Contract.decimals()])
 
                 const slot0 = await pool.slot0()
                 const tick = Number(slot0.tick)
@@ -250,7 +245,6 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
                 const price = sqrtPToPriceNumber(sqrtPriceX96)
 
                 const positionKey = ethers.keccak256(ethers.solidityPacked(["address", "int24", "int24"], [manager.target, extracted.lowerTick, extracted.upperTick]))
-
                 const positionOnPool = await pool.positions(positionKey)
                 const liquidity = positionOnPool.liquidity.toString()
 
@@ -258,13 +252,7 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
                 const token1 = new Token(1, token1Address, Number(decimals1), symbol1)
 
                 const poolSdk = new Pool(token0, token1, fee, sqrtPriceX96.toString(), liquidity, tick)
-                const positionEntity = new Position
-                ({
-                    pool: poolSdk,
-                    liquidity,
-                    tickLower: Number(extracted.lowerTick),
-                    tickUpper: Number(extracted.upperTick),
-                })
+                const positionEntity = new Position({ pool: poolSdk, liquidity, tickLower: Number(extracted.lowerTick), tickUpper: Number(extracted.upperTick) })
 
                 allPositions.push
                 ({
@@ -298,13 +286,17 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
 
         return { positions: allPositions }
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
-export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Balance: string }, { token0Address: string | null; token1Address: string | null }, { state: { blockchain: BlockchainState } }>("blockchain/fetchBalances", async ({ token0Address, token1Address }, { getState, rejectWithValue }) => 
+export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Balance: string }, { token0Address: string; token1Address: string }, { state: { blockchain: BlockchainState } }>("blockchain/fetchBalances", async ({ token0Address, token1Address }, { getState, rejectWithValue }) => 
 {
     const { signer } = getState().blockchain
     if (!signer) return rejectWithValue("Signer not available")
@@ -313,30 +305,29 @@ export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Bal
     {
         const signerAddress = await signer.getAddress()
 
-        let token0Balance = "0"
-        let token1Balance = "0"
+        const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+        const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
 
-        if (token0Address) 
-        {
-            const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-            const rawBalance0 = await token0Contract.balanceOf(signerAddress)
-            const symbol0 = await token0Contract.symbol()
-            token0Balance = `${ethers.formatEther(rawBalance0)} ${symbol0}`
-        }
+        const [rawBalance0, symbol0, rawBalance1, symbol1] = await Promise.all
+        ([
+            token0Contract.balanceOf(signerAddress),
+            token0Contract.symbol(),
+            token1Contract.balanceOf(signerAddress),
+            token1Contract.symbol(),
+        ])
 
-        if (token1Address) 
-        {
-            const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
-            const rawBalance1 = await token1Contract.balanceOf(signerAddress)
-            const symbol1 = await token1Contract.symbol()
-            token1Balance = `${ethers.formatEther(rawBalance1)} ${symbol1}`
+        return {
+            token0Balance: `${ethers.formatEther(rawBalance0)} ${symbol0}`,
+            token1Balance: `${ethers.formatEther(rawBalance1)} ${symbol1}`,
         }
-        
-        return { token0Balance, token1Balance }
     } 
-    catch (err: any) 
+    catch (error) 
     {
-        return rejectWithValue(err.message)
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
     }
 })
 
@@ -354,35 +345,39 @@ export const blockchainSlice = createSlice
     extraReducers: (builder) => 
     {
         builder.addCase(initializeMetaMaskSDK.fulfilled, (state, action) => 
-        {
-            state.sdk = action.payload as any
+        { 
+            const plainState = current(state)
+            return {
+                    ...plainState,
+                    sdk: action.payload,
+                } as BlockchainState
         }).addCase(connectWallet.pending, (state) => 
-        {
-            state.status = "loading"
+        { 
+            state.status = "loading" 
         }).addCase(connectWallet.fulfilled, (state, action) => 
         {
             state.status = "idle"
             state.account = action.payload.account
             state.isConnected = true
-            state.signer = action.payload.signer as any
+            state.signer = action.payload.signer
         }).addCase(connectWallet.rejected, (state, action) => 
         {
             state.status = "failed"
             state.error = action.payload as string
             state.isConnected = false
         }).addCase(disconnectWallet.fulfilled, (state) => 
-        {
-            Object.assign(state, initialState)
+        { 
+            Object.assign(state, initialState) 
         }).addCase(fetchDeploymentData.fulfilled, (state, action) => 
         {
             state.deploymentAddresses = action.payload.deploymentAddresses
-            state.contracts = action.payload.contracts as any 
+            Object.assign(state.contracts, action.payload.contracts)
         }).addCase(loadBlockchainData.fulfilled, (state, action) => 
-        {
-            state.cryptocurrencies = action.payload.cryptocurrencies
+        { 
+            state.cryptocurrencies = action.payload.cryptocurrencies 
         }).addCase(loadBlockchainPositions.fulfilled, (state, action) => 
-        {
-            state.positions = action.payload.positions
+        { 
+            state.positions = action.payload.positions 
         }).addCase(fetchBalances.fulfilled, (state, action) => 
         {
             state.token0Balance = action.payload.token0Balance

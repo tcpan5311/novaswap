@@ -8,10 +8,10 @@ export interface CryptocurrencyDetail
 
 export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>
 
-const isValidAddress = (address?: string) => !!address && typeof address === "string" && address.trim() !== ""
-const isValidNumber = (number?: any) => number !== null && !isNaN(Number(number))
-const isPositiveNumber = (number?: any) => isValidNumber(number) && Number(number) > 0
-const error = (message?: string) => ({ isValid: false, errorMessage: message })
+const isValidAddress = (address: string) => !!address && typeof address === "string" && address.trim() !== ""
+const isValidNumber = (number: any) => number !== null && !isNaN(Number(number))
+const isPositiveNumber = (number: any) => isValidNumber(number) && Number(number) > 0
+const error = (message: string = "invalid") => ({ isValid: false, errorMessage: message })
 
 export const validateFirstStep = (token0Address: string, token1Address: string, fee: number): boolean => 
 {
@@ -46,7 +46,7 @@ export const validateSecondStep = async (
     uniswapV3FactoryContract: any,
     getPoolContract: (address: string) => any,
     erc20Contract: (address: string, signerOrProvider: any) => any
-): Promise<{ isValid: boolean, errorMessage?: string }> => 
+): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     if (!minPrice || !maxPrice || !token0Amount || !token1Amount) return error("incomplete_fields")
     if (!validateFirstStep(token0Address, token1Address, fee)) return error()
@@ -74,8 +74,11 @@ export const validateSecondStep = async (
                 uniswapV3FactoryContract,
                 getPoolContract
             )
-            const amountA = parseFloat(result?.amountA ?? "0")
-            const amountB = parseFloat(result?.amountB ?? "0")
+
+            if (!result) throw new Error("computeTokenAmount returned undefined")
+            const amountA = parseFloat(result.amountA)
+            const amountB = parseFloat(result.amountB)
+            
             if (amountA >= threshold && amountB < threshold && !isAmountValid(token0Amount)) return false
             if (amountB >= threshold && amountA < threshold && !isAmountValid(token1Amount)) return false
             if (amountA >= threshold && amountB >= threshold && !isAmountValid(token0Amount) && !isAmountValid(token1Amount)) return false
@@ -98,7 +101,7 @@ export const validateSecondStep = async (
 
         if (balance0 < required0 || balance1 < required1) return error("insufficient_tokens")
 
-        return { isValid: true }
+        return { isValid: true, errorMessage: "" }
     } 
     catch (err) 
     {
@@ -114,7 +117,7 @@ export const validateAmounts = async (
     token0Amount: string, 
     token1Amount: string, 
     erc20Contract: (address: string, signerOrProvider: any) => any
-): Promise<{ isValid: boolean, errorMessage?: string }> => 
+): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     const isValidNumber = (value: string) => !!value && !isNaN(Number(value)) && Number(value) > 0
     if (!isValidNumber(token0Amount) || !isValidNumber(token1Amount)) return error("incomplete_fields")
@@ -139,7 +142,7 @@ export const validateAmounts = async (
 
         if (balance0 < required0 || balance1 < required1) return error("insufficient_tokens")
 
-        return { isValid: true }
+        return { isValid: true, errorMessage: "" }
     } 
     catch (err) 
     {
@@ -148,14 +151,14 @@ export const validateAmounts = async (
     }
 }
 
-export const validatePercent = (percent: string): { isValid: boolean, errorMessage?: string } => 
+export const validatePercent = (percent: string): { isValid: boolean, errorMessage: string } => 
 {
     if (!percent || percent.trim() === "") return error("incomplete_fields")
 
     const num = parseFloat(percent.replace('%', ''))
     if (isNaN(num) || num < 1 || num > 100) return error("invalid_percent")
 
-    return { isValid: true }
+    return { isValid: true, errorMessage: "" }
 }
 
 export const validateSwapStep = async (
@@ -165,7 +168,7 @@ export const validateSwapStep = async (
     token0Amount: string,
     token1Amount: string,
     erc20Contract: (address: string, signerOrProvider: any) => any
-): Promise<{ isValid: boolean, errorMessage?: string }> => 
+): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     if (!token0Address || !token1Address) return error("incomplete_fields")
     if (!isPositiveNumber(token0Amount) || !signer) return error("incomplete_fields")
@@ -181,7 +184,7 @@ export const validateSwapStep = async (
 
         if (balance0 < required0) return error("insufficient_tokens")
 
-        return { isValid: true }
+        return { isValid: true, errorMessage: "" }
     } 
     catch (err) 
     {

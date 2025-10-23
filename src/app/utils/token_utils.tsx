@@ -1,7 +1,7 @@
 interface VerifyTokenResponse 
 {
-  tokenId?: string;
-  error?: string;
+  tokenId: string
+  error: string
 }
 
 export async function generateSignedToken(tokenId: string | number, token0Amount0: string, token1Amount1: string): Promise<string | null> 
@@ -15,7 +15,7 @@ export async function generateSignedToken(tokenId: string | number, token0Amount
             body: JSON.stringify({ action: "sign", tokenId: tokenId.toString(), token0Amount0, token1Amount1 }),
         })
 
-        const data: { token?: string } = await res.json()
+        const data: { token: string } = await res.json()
 
         if (data.token) 
         {
@@ -55,7 +55,7 @@ export async function fetchVerifyToken(tokenParam: string): Promise<VerifyTokenR
             {
                 errorData = { error: res.statusText }
             }
-            throw new Error(errorData?.error || "Failed to verify token")
+            throw new Error(errorData.error || "Failed to verify token")
         }
 
     const data: VerifyTokenResponse = await res.json()

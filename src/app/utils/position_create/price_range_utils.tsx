@@ -29,11 +29,15 @@ export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObje
 export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => void, handlePriceMoveFns: Array<(event: MouseEvent) => Promise<void>>) => 
 {
     setDraggingType(null)
-    handlePriceMoveFns.forEach(fn => document.removeEventListener("mousemove", fn as any))
-    document.removeEventListener("mouseup", handleMouseUp as any)
+    handlePriceMoveFns.forEach(fn => 
+    {
+        const listener = fn as unknown as EventListener;
+        document.removeEventListener("mousemove", listener);
+    })
+    document.removeEventListener("mouseup", handleMouseUp as unknown as EventListener)
 }
 
-export const handleClampedPrice = async (type: "min" | "max", currentPoolPrice: number, otherPrice: number, setPrice: Dispatch<SetStateAction<number>>, setPriceInput?: Dispatch<SetStateAction<string>>): Promise<number> => 
+export const handleClampedPrice = async (type: "min" | "max", currentPoolPrice: number, otherPrice: number, setPrice: Dispatch<SetStateAction<number>>, setPriceInput: Dispatch<SetStateAction<string>>): Promise<number> => 
 {
     const BUFFER_PERCENTAGE = 0.05
     let clamped: number
@@ -71,7 +75,15 @@ export const handlePriceClick = (direction: "increase" | "decrease", currentPric
     const step = (prev: number) => 
     {
         const step = prev * PRICE_STEP_PERCENTAGE
-        let newPrice = direction === "increase" ? prev + step : prev - step
+        let newPrice
+        if (direction === "increase") 
+        {
+            newPrice = prev + step
+        } 
+        else 
+        {
+            newPrice = prev - step
+        }
         const minAllowed = currentPrice * 0.75
         const maxAllowed = currentPrice * 1.25
         const dynamicBuffer = calculateDynamicBuffer(minPrice, maxPrice)
