@@ -1,4 +1,4 @@
-import { parseEther } from "ethers"
+import { Signer, Provider, ethers, parseEther } from "ethers"
 
 export interface CryptocurrencyDetail 
 {
@@ -6,11 +6,14 @@ export interface CryptocurrencyDetail
     Address: string
 }
 
-export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>
+export type GetPoolContract = (address: string) => ethers.Contract | undefined
+export type GetERC20Contract = (address: string, signer: ethers.Signer | undefined) => ethers.Contract | undefined
+
+export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | undefined>>
 
 const isValidAddress = (address: string) => !!address && typeof address === "string" && address.trim() !== ""
-const isValidNumber = (number: any) => number !== null && !isNaN(Number(number))
-const isPositiveNumber = (number: any) => isValidNumber(number) && Number(number) > 0
+const isValidNumber = (number: string | number) => number !== null && !isNaN(Number(number))
+const isPositiveNumber = (number: string | number) => isValidNumber(number) && Number(number) > 0
 const error = (message: string = "invalid") => ({ isValid: false, errorMessage: message })
 
 export const validateFirstStep = (token0Address: string, token1Address: string, fee: number): boolean => 
@@ -33,7 +36,7 @@ export const validateFullFirstStep = async (
 }
 
 export const validateSecondStep = async (
-    signer: any,
+    signer: ethers.Signer | undefined,
     token0Address: string,
     token1Address: string,
     fee: number,
@@ -44,8 +47,8 @@ export const validateSecondStep = async (
     currentPrice: number,
     computeTokenAmount: Function,
     uniswapV3FactoryContract: any,
-    getPoolContract: (address: string) => any,
-    erc20Contract: (address: string, signerOrProvider: any) => any
+    getPoolContract: GetPoolContract,
+    erc20Contract: GetERC20Contract
 ): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     if (!minPrice || !maxPrice || !token0Amount || !token1Amount) return error("incomplete_fields")
@@ -94,6 +97,9 @@ export const validateSecondStep = async (
 
         const token0Contract = erc20Contract(token0Address, signer)
         const token1Contract = erc20Contract(token1Address, signer)
+
+        if (!token0Contract || !token1Contract) return error("contract_not_found")
+
         const [balance0, balance1] = await Promise.all([token0Contract.balanceOf(userAddress), token1Contract.balanceOf(userAddress)])
 
         const required0 = parseEther(token0Amount || "0")
@@ -111,12 +117,12 @@ export const validateSecondStep = async (
 }
 
 export const validateAmounts = async (
-    signer: any, 
+    signer: ethers.Signer | undefined, 
     token0Address: string, 
     token1Address: string, 
     token0Amount: string, 
     token1Amount: string, 
-    erc20Contract: (address: string, signerOrProvider: any) => any
+    erc20Contract: GetERC20Contract
 ): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     const isValidNumber = (value: string) => !!value && !isNaN(Number(value)) && Number(value) > 0
@@ -132,7 +138,10 @@ export const validateAmounts = async (
         const token0Contract = erc20Contract(token0Address, signer)
         const token1Contract = erc20Contract(token1Address, signer)
 
-        const [balance0, balance1] = await Promise.all([
+        if (!token0Contract || !token1Contract) return error("contract_not_found")
+
+        const [balance0, balance1] = await Promise.all
+        ([
             token0Contract.balanceOf(userAddress),
             token1Contract.balanceOf(userAddress)
         ])
@@ -162,12 +171,12 @@ export const validatePercent = (percent: string): { isValid: boolean, errorMessa
 }
 
 export const validateSwapStep = async (
-    signer: any,
+    signer: ethers.Signer | undefined,
     token0Address: string,
     token1Address: string,
     token0Amount: string,
     token1Amount: string,
-    erc20Contract: (address: string, signerOrProvider: any) => any
+    erc20Contract: GetERC20Contract
 ): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
     if (!token0Address || !token1Address) return error("incomplete_fields")
@@ -179,6 +188,9 @@ export const validateSwapStep = async (
         if (!userAddress) return error("missing_user_address")
 
         const token0Contract = erc20Contract(token0Address, signer)
+
+        if (!token0Contract) return error("contract_not_found")
+
         const balance0 = await token0Contract.balanceOf(userAddress)
         const required0 = parseEther(token0Amount || "0")
 

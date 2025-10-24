@@ -3,6 +3,8 @@ import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
 import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances} from "../redux/blockchain_slice"
+import { PositionData } from "../redux/types"
+import { CryptocurrencyDetail, TokenSetter } from "../redux/types"
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { LoadingOverlay, Button, Group, Box, Text, Flex, Card, Table, Breadcrumbs, Grid, Stepper, MultiSelect, Modal, Input, NumberInput, Stack, ActionIcon, Textarea, ScrollArea, UnstyledButton, Tabs, Select, Badge} from '@mantine/core'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer } from "recharts"
@@ -16,8 +18,8 @@ import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAm
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import {handlePriceMove, handleMouseUp, handleClampedPrice, handlePriceClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
-import {CryptocurrencyDetail, TokenSetter, validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
-import {PositionData, priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import {validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
+import { priceToSqrtPBigNumber, sqrtPToPriceNumber, priceToSqrtP, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 
 const feeStructure = 
 [
@@ -95,9 +97,9 @@ export default function PositionCreate()
     const [query, setQuery] = useState('')
     const filtered = (cryptocurrencies ?? []).filter(item => item.Label.toLowerCase().includes(query.toLowerCase()))
     const [hovered, setHovered] = useState(-1)
-    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
-    const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
-    const [fee, setFee] = useState<number | null>(null)
+    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | undefined>(undefined)
+    const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | undefined>(undefined)
+    const [fee, setFee] = useState<number | undefined>(undefined)
 
     const links = 
     [
@@ -145,7 +147,7 @@ export default function PositionCreate()
     const [token0Amount, setToken0Amount] = useState<string>('')
     const [token1Amount, setToken1Amount] = useState<string>('')
 
-    const [draggingType, setDraggingType] = useState<"min" | "max" | null>(null)
+    const [draggingType, setDraggingType] = useState<"min" | "max" | undefined>(undefined)
     const chartRef = useRef<HTMLDivElement>(null)
 
     const [isFirstStepValid, setIsFirstStepValid] = useState(false)
@@ -310,7 +312,7 @@ export default function PositionCreate()
                 computeTokenAmount,
                 contracts?.UniswapV3FactoryContract,
                 (address: string) => getPoolContract(signer, address),
-                (address, signerOrProvider) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider)
+                (address, signer) => new ethers.Contract(address, ERC20Mintable.abi, signer)
             )
 
             setIsSecondStepValid(finalValidation.isValid)
@@ -433,13 +435,13 @@ export default function PositionCreate()
     ], 500)
     {/* === END: Core function of validator and token computation === */}
 
-    const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
+    const handleTokenSelect = (selectedItem: CryptocurrencyDetail | undefined, currentToken: CryptocurrencyDetail | undefined, otherToken: CryptocurrencyDetail | undefined, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
     {
         if (!selectedItem) return
 
         if (otherToken?.Address === selectedItem.Address) 
         {
-            setOtherToken(null)
+            setOtherToken(undefined)
             setCurrentToken(selectedItem)
         }
         else if (currentToken?.Address === selectedItem.Address) 

@@ -21,3 +21,11 @@ export type PositionData =
   token0Amount0: bigint
   token1Amount1: bigint
 }
+
+export type TokenSetter = React.Dispatch<React.SetStateAction<CryptocurrencyDetail | undefined>>
+
+export interface CryptocurrencyDetail 
+{
+    Label: string
+    Address: string
+}

@@ -26,14 +26,15 @@ export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObje
     setPriceInput(newPrice.toFixed(18))
 }
 
-export const handleMouseUp = (setDraggingType: (type: "min" | "max" | null) => void, handlePriceMoveFns: Array<(event: MouseEvent) => Promise<void>>) => 
+export const handleMouseUp = (setDraggingType: (type: "min" | "max" | undefined) => void, handlePriceMoveFns: Array<(event: MouseEvent) => Promise<void>>) => 
 {
-    setDraggingType(null)
+    setDraggingType(undefined)
     handlePriceMoveFns.forEach(fn => 
     {
         const listener = fn as unknown as EventListener;
         document.removeEventListener("mousemove", listener);
     })
+    
     document.removeEventListener("mouseup", handleMouseUp as unknown as EventListener)
 }
 

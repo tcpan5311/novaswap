@@ -13,7 +13,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import JSBI from 'jsbi'
-import {PositionData, sqrtPToPriceNumber, tickToPrice, roundIfCloseToWhole } from '../utils/compute_token_utils'
+import { roundIfCloseToWhole } from '../utils/compute_token_utils'
 import { generateSignedToken } from "../utils/token_utils"
 
 const pools = 

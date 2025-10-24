@@ -1,18 +1,20 @@
+import { CryptocurrencyDetail } from "@/app/redux/types"
+
 type Setters = 
 {
-    setStepActive: (val: number) => void
+    setStepActive: (value: number) => void
     setHighestStepVisited: (fn: (prev: number) => number) => void
-    setSelectedToken0: (val: any) => void
-    setSelectedToken1: (val: any) => void
-    setFee: (val: any) => void
-    setInitialPrice: (val: number) => void
-    setInitialPriceInput: (val: string) => void
-    setMinPrice: (val: number) => void
-    setMaxPrice: (val: number) => void
-    setMinPriceInput: (val: string) => void
-    setMaxPriceInput: (val: string) => void
-    setToken0Amount: (val: string) => void
-    setToken1Amount: (val: string) => void
+    setSelectedToken0: (value: CryptocurrencyDetail | undefined) => void
+    setSelectedToken1: (value: CryptocurrencyDetail | undefined) => void
+    setFee: (value: number | undefined) => void
+    setInitialPrice: (value: number) => void
+    setInitialPriceInput: (value: string) => void
+    setMinPrice: (value: number) => void
+    setMaxPrice: (value: number) => void
+    setMinPriceInput: (value: string) => void
+    setMaxPriceInput: (value: string) => void
+    setToken0Amount: (value: string) => void
+    setToken1Amount: (value: string) => void
     updateTokenSelection: (shouldSet: boolean) => void
 }
 
@@ -36,9 +38,9 @@ const resetFormState = (setters: Setters) =>
         updateTokenSelection
     } = setters
 
-    setSelectedToken0(null)
-    setSelectedToken1(null)
-    setFee(null)
+    setSelectedToken0(undefined)
+    setSelectedToken1(undefined)
+    setFee(undefined)
     setInitialPrice(0)
     setInitialPriceInput("")
     setMinPrice(0)
@@ -50,14 +52,16 @@ const resetFormState = (setters: Setters) =>
     updateTokenSelection(false)
 }
 
-export const processStepClick = (step: number, highestStepVisited: number, setters: Setters, selectedToken0: any, selectedToken1: any, fee: any, validateFirstStep: (token0: any, token1: any, fee: any) => boolean,) => 
+export const processStepClick = (step: number, highestStepVisited: number, setters: Setters, selectedToken0: CryptocurrencyDetail | undefined, selectedToken1: CryptocurrencyDetail | undefined, fee: number | undefined, validateFirstStep: (token0: string, token1: string, fee: number) => boolean,) => 
 {
     const { setStepActive } = setters
     if (!shouldAllowStep(step, highestStepVisited)) return
 
     if (step === 1) 
     {
-        if (validateFirstStep(selectedToken0, selectedToken1, fee)) 
+        if (!selectedToken0 || !selectedToken1 || fee === undefined) return
+
+        if (validateFirstStep(selectedToken0.Address, selectedToken1.Address, fee)) 
         {
             setStepActive(step + 1)
         }

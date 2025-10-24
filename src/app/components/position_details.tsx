@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
 import { connectWallet, getPoolContract, fetchBalances } from '../redux/blockchain_slice'
+import { PositionData } from "../redux/types"
 import { useState, useEffect } from 'react'
 import { Grid, Stack, Tabs, Button, Group, Box, Text, Flex, Card, Input, Badge, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
@@ -15,7 +16,7 @@ import { useSearchParams } from 'next/navigation'
 import { IconCoinFilled, IconArrowLeft } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
-import {PositionData, sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
+import { sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 import { validateAmounts, validatePercent } from '../utils/validator_utils'
 import {LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,} from "recharts"
 import { fetchVerifyToken } from '../utils/token_utils'

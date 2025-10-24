@@ -38,13 +38,13 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
     }, [...deps, delay])
 }
 
-const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: CryptocurrencyDetail | null, otherToken: CryptocurrencyDetail | null, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
+const handleTokenSelect = (selectedItem: CryptocurrencyDetail | undefined, currentToken: CryptocurrencyDetail | undefined, otherToken: CryptocurrencyDetail | undefined, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
 {
     if (!selectedItem) return
 
     if (otherToken?.Address === selectedItem.Address) 
     {
-        setOtherToken(null)
+        setOtherToken(undefined)
         setCurrentToken(selectedItem)
     }
     else if (currentToken?.Address === selectedItem.Address) 
@@ -65,10 +65,10 @@ const handleTokenSelect = (selectedItem: CryptocurrencyDetail, currentToken: Cry
 
 const handleSwitchToken = 
 (
-    selectedToken0: CryptocurrencyDetail | null, 
-    selectedToken1: CryptocurrencyDetail | null,  
-    setSelectedToken0: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>, 
-    setSelectedToken1: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | null>>,
+    selectedToken0: CryptocurrencyDetail | undefined, 
+    selectedToken1: CryptocurrencyDetail | undefined,  
+    setSelectedToken0: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | undefined>>, 
+    setSelectedToken1: React.Dispatch<React.SetStateAction<CryptocurrencyDetail | undefined>>,
     swapValue1: string,
     swapValue2: string,
     setSwapValue1: React.Dispatch<React.SetStateAction<string>>,
@@ -94,8 +94,8 @@ export default function SwapMain()
     const dispatch = useDispatch<AppDispatch>()
     const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance} = useSelector(blockchainSelector)
 
-    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | null>(null)
-    const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | null>(null)
+    const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | undefined>(undefined)
+    const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | undefined>(undefined)
     
     const [swapValue1, setSwapValue1] = useState('')
     const [swapValue2, setSwapValue2] = useState('')
@@ -208,8 +208,8 @@ export default function SwapMain()
             if (!selectedToken0 && !selectedToken1) return
             dispatch(fetchBalances
             ({
-                token0Address: selectedToken0 ? selectedToken0.Address : null,
-                token1Address: selectedToken1 ? selectedToken1.Address : null
+                token0Address: selectedToken0 ? selectedToken0.Address : "",
+                token1Address: selectedToken1 ? selectedToken1.Address : ""
             }))
         }
 

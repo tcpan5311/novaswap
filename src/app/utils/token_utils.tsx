@@ -4,7 +4,7 @@ interface VerifyTokenResponse
   error: string
 }
 
-export async function generateSignedToken(tokenId: string | number, token0Amount0: string, token1Amount1: string): Promise<string | null> 
+export async function generateSignedToken(tokenId: string | number, token0Amount0: string, token1Amount1: string): Promise<string | undefined> 
 {
     try 
     {
@@ -24,13 +24,13 @@ export async function generateSignedToken(tokenId: string | number, token0Amount
         else 
         {
             console.warn("Failed to generate token")
-            return null
+            return undefined
         }
     } 
     catch (err) 
     {
         console.error("Error generating signed token:", err)
-        return null
+        return undefined
     }
 }
 

@@ -4,29 +4,7 @@ import { ethers } from 'ethers'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import JSBI from 'jsbi'
 
-export type PositionData = 
-{
-    tokenId: bigint
-    token0Address: string
-    token1Address: string
-    token0: string
-    token1: string
-    fee: number
-    pool: string
-    tickLower: number
-    tickUpper: number
-    minPrice: number,
-    maxPrice: number
-    currentTick: number
-    liquidity: bigint
-    currentPrice: number
-    feeGrowthInside0LastX128: bigint
-    feeGrowthInside1LastX128: bigint
-    tokensOwed0: bigint
-    tokensOwed1: bigint
-    token0Amount0: bigint
-    token1Amount1: bigint
-}
+export type GetPoolContract = (address: string) => ethers.Contract | undefined
 
 //Helper functions
 export const priceToSqrtPBigNumber = (price: number): bigint => 
@@ -89,7 +67,7 @@ export const computeTokenAmount = async (
     isAToB: boolean,
     overrideAmount: string,
     currentPrice: number,
-    signer: ethers.Signer,
+    signer: ethers.Signer | undefined,
     token0Address: string,
     token1Address: string,
     fee: number,
@@ -98,10 +76,14 @@ export const computeTokenAmount = async (
     minPrice: number,
     maxPrice: number,
     uniswapV3FactoryContract: any,
-    getPoolContract: (address: string) => any
+    getPoolContract: GetPoolContract
 ): Promise<{ amountA: string; amountB: string }> => 
     {
-
+    
+    if (!signer) 
+    {
+        throw new Error("Signer is required but not provided")
+    }
     if (!signer.provider) 
     {
         throw new Error("Provider not available from signer")
@@ -126,8 +108,18 @@ export const computeTokenAmount = async (
         new Token(chainId, token1Address, Number(decimalB), symB)
     ]
 
+    if (!uniswapV3FactoryContract) 
+    {
+        throw new Error("UniswapV3FactoryContract is required but was not provided")
+    }
+
     const poolAddress = await uniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
     const poolCallContract = getPoolContract(poolAddress)
+
+    if (!poolCallContract) 
+    {
+        throw new Error(`Pool contract not found at address ${poolAddress}`)
+    }
 
     let pool: Pool
     try 
@@ -249,7 +241,7 @@ export const updateTokenAmounts = async (
         isAToB: boolean,
         overrideAmount: string,
         currentPrice: number,
-        signer: any,
+        signer: ethers.Signer | undefined,
         token0Address: string,
         token1Address: string,
         fee: number,
@@ -258,16 +250,16 @@ export const updateTokenAmounts = async (
         minPrice: number,
         maxPrice: number,
         uniswapV3FactoryContract: any,
-        getPoolContract: (address: string) => any
+        getPoolContract: GetPoolContract
     ) => Promise<{ amountA: string; amountB: string }>,
     setToken0Amount: (value: string) => void,
     setToken1Amount: (value: string) => void,
     lastEditedField: string,
     token0Amount: string,
     token1Amount: string,
-    signer: any,
+    signer: ethers.Signer | undefined,
     uniswapV3FactoryContract: any,
-    getPoolContract: (address: string) => any
+    getPoolContract: GetPoolContract
 ): Promise<void> => 
 {
     if (!token0Address || !token1Address || !fee || !minPrice || !maxPrice)  return
@@ -325,7 +317,7 @@ export const handleTokenInputDisplay = async (
         isAToB: boolean,
         overrideAmount: string,
         currentPrice: number,
-        signer: any,
+        signer: ethers.Signer | undefined,
         token0Address: string,
         token1Address: string,
         fee: number,
@@ -334,13 +326,13 @@ export const handleTokenInputDisplay = async (
         minPrice: number,
         maxPrice: number,
         uniswapV3FactoryContract: any,
-    getPoolContract: (address: string) => any
+    getPoolContract: GetPoolContract
     ) => Promise<{ amountA: string; amountB: string }>,
     setHideToken0DuringChange: (value: boolean) => void,
     setHideToken1DuringChange: (value: boolean) => void,
-    signer: any,
+    signer: ethers.Signer | undefined,
     uniswapV3FactoryContract: any,
-    getPoolContract: (address: string) => any
+    getPoolContract: GetPoolContract
 ) => 
 {
     if (!token0Address || !token1Address || !fee || !minPrice || !maxPrice)  return

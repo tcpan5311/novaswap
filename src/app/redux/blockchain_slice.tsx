@@ -1,5 +1,5 @@
 "use client"
-import type { AppDispatch, RootState } from "./store"
+import type { AppDispatch } from "./store"
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import { PositionData } from "./types"
 import { MetaMaskSDK } from "@metamask/sdk"
@@ -29,25 +29,25 @@ export interface DeploymentAddresses
 
 export interface ContractReferences 
 {
-    EthereumContract: ethers.Contract | null
-    USDCContract: ethers.Contract | null
-    UniswapContract: ethers.Contract | null
-    UniswapV3FactoryContract: ethers.Contract | null
-    UniswapV3ManagerContract: ethers.Contract | null
-    UniswapV3NFTManagerContract: ethers.Contract | null
-    UniswapV3QuoterContract: ethers.Contract | null
+    EthereumContract: ethers.Contract | undefined
+    USDCContract: ethers.Contract | undefined
+    UniswapContract: ethers.Contract | undefined
+    UniswapV3FactoryContract: ethers.Contract | undefined
+    UniswapV3ManagerContract: ethers.Contract | undefined
+    UniswapV3NFTManagerContract: ethers.Contract | undefined
+    UniswapV3QuoterContract: ethers.Contract | undefined
 }
 
 export interface BlockchainState 
 {
-    sdk: MetaMaskSDK | null | undefined
+    sdk: MetaMaskSDK | undefined
     account: string
     isConnected: boolean
-    signer: ethers.JsonRpcSigner | null
-    deploymentAddresses: DeploymentAddresses | null
+    signer: ethers.JsonRpcSigner | undefined
+    deploymentAddresses: DeploymentAddresses | undefined
     contracts: ContractReferences
     status: "idle" | "loading" | "failed"
-    error: string | null
+    error: string | undefined
     cryptocurrencies: { Label: string; Address: string }[]
     positions: PositionData[]
     token0Balance: string
@@ -56,27 +56,27 @@ export interface BlockchainState
 
 const initialState: BlockchainState = 
 {
-    sdk: null,
+    sdk: undefined,
     account: "",
     isConnected: false,
-    signer: null,
-    deploymentAddresses: null,
+    signer: undefined,
+    deploymentAddresses: undefined,
     contracts: 
     {
-        EthereumContract: null,
-        USDCContract: null,
-        UniswapContract: null,
-        UniswapV3FactoryContract: null,
-        UniswapV3ManagerContract: null,
-        UniswapV3NFTManagerContract: null,
-        UniswapV3QuoterContract: null,
+        EthereumContract: undefined,
+        USDCContract: undefined,
+        UniswapContract: undefined,
+        UniswapV3FactoryContract: undefined,
+        UniswapV3ManagerContract: undefined,
+        UniswapV3NFTManagerContract: undefined,
+        UniswapV3QuoterContract: undefined,
     },
     status: "idle",
-    error: null,
+    error: undefined,
     cryptocurrencies: [],
     positions: [],
-    token0Balance: "0",
-    token1Balance: "0",
+    token0Balance: "",
+    token1Balance: "",
 }
 
 export const initializeMetaMaskSDK = createAsyncThunk("blockchain/initSDK", async () => 
@@ -339,7 +339,7 @@ export const blockchainSlice = createSlice
     {
         resetError(state) 
         {
-            state.error = null
+            state.error = undefined
         },
     },
     extraReducers: (builder) => 
@@ -388,9 +388,9 @@ export const blockchainSlice = createSlice
 
 export const { resetError } = blockchainSlice.actions
 
-export const getPoolContract = (signer: ethers.JsonRpcSigner | null, address: string) => 
+export const getPoolContract = (signer: ethers.JsonRpcSigner | undefined, address: string) => 
 {
-    if (!signer || !ethers.isAddress(address)) return null
+    if (!signer || !ethers.isAddress(address)) return undefined
     return new ethers.Contract(address, UniswapV3Pool.abi, signer)
 }
 
