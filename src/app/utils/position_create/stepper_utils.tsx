@@ -74,7 +74,7 @@ export const processStepClick = (step: number, highestStepVisited: number, sette
 }
 
 
-export const processStepChange = async (direction: 'next' | 'back', stepActive: number, setters: Setters, getCurrentPoolPrice: () => Promise<number | null | undefined>,) => 
+export const processStepChange = async (direction: 'next' | 'back', stepActive: number, setters: Setters, getCurrentPoolPrice: () => Promise<number | undefined>,) => 
 {
     const { setStepActive, setHighestStepVisited } = setters
 
@@ -101,7 +101,7 @@ export const processStepChange = async (direction: 'next' | 'back', stepActive: 
 
     const poolPrice = (await getCurrentPoolPrice())
     let currentPrice
-    if (poolPrice !== null && poolPrice !== undefined) 
+    if (poolPrice !== undefined) 
     {
         currentPrice = poolPrice
     } 

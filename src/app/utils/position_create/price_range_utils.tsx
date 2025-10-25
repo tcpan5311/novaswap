@@ -10,7 +10,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 
 const calculateDynamicBuffer = (minPrice: number, maxPrice: number) => (maxPrice - minPrice) * BUFFER_PERCENTAGE
 
-export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | null>, minPriceAllowed: number, maxPriceAllowed: number, setPrice: SetPrice, setPriceInput: SetInput) => 
+export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObject<HTMLDivElement | undefined>, minPriceAllowed: number, maxPriceAllowed: number, setPrice: SetPrice, setPriceInput: SetInput) => 
 {
     if (!chartRef.current) return
 

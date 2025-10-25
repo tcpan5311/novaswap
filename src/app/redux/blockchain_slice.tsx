@@ -3,7 +3,7 @@ import type { AppDispatch } from "./store"
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import { PositionData } from "./types"
 import { MetaMaskSDK } from "@metamask/sdk"
-import { ethers } from "ethers"
+import { ethers, Contract } from "ethers"
 import { Pool, Position } from '@uniswap/v3-sdk'
 import { Token } from '@uniswap/sdk-core'
 import { sqrtPToPriceNumber, tickToPrice} from '../utils/compute_token_utils'
@@ -15,6 +15,11 @@ import UniswapV3Pool from "../../../contracts/UniswapV3Pool.json"
 import UniswapV3Manager from "../../../contracts/UniswapV3Manager.json"
 import UniswapV3NFTManager from "../../../contracts/UniswapV3NFTManager.json"
 import UniswapV3Quoter from "../../../contracts/UniswapV3Quoter.json"
+
+export type UniswapV3FactoryContract = Contract & 
+{
+    getPoolAddress(token0: string, token1: string, fee: number): Promise<string>
+}
 
 export interface DeploymentAddresses 
 {
@@ -32,7 +37,7 @@ export interface ContractReferences
     EthereumContract: ethers.Contract | undefined
     USDCContract: ethers.Contract | undefined
     UniswapContract: ethers.Contract | undefined
-    UniswapV3FactoryContract: ethers.Contract | undefined
+    UniswapV3FactoryContract: UniswapV3FactoryContract | undefined
     UniswapV3ManagerContract: ethers.Contract | undefined
     UniswapV3NFTManagerContract: ethers.Contract | undefined
     UniswapV3QuoterContract: ethers.Contract | undefined
@@ -153,7 +158,7 @@ export const fetchDeploymentData = createAsyncThunk<{ deploymentAddresses: Deplo
             EthereumContract: new ethers.Contract(data.EthereumAddress, ERC20Mintable.abi, signer),
             USDCContract: new ethers.Contract(data.USDCAddress, ERC20Mintable.abi, signer),
             UniswapContract: new ethers.Contract(data.UniswapAddress, ERC20Mintable.abi, signer),
-            UniswapV3FactoryContract: new ethers.Contract(data.UniswapV3FactoryAddress, UniswapV3Factory.abi, signer),
+            UniswapV3FactoryContract: new ethers.Contract(data.UniswapV3FactoryAddress, UniswapV3Factory.abi, signer) as UniswapV3FactoryContract,
             UniswapV3ManagerContract: new ethers.Contract(data.UniswapV3ManagerAddress, UniswapV3Manager.abi, signer),
             UniswapV3NFTManagerContract: new ethers.Contract(data.UniswapV3NFTManagerAddress, UniswapV3NFTManager.abi, signer),
             UniswapV3QuoterContract: new ethers.Contract(data.UniswapV3QuoterAddress, UniswapV3Quoter.abi, signer),

@@ -148,7 +148,7 @@ export default function PositionCreate()
     const [token1Amount, setToken1Amount] = useState<string>('')
 
     const [draggingType, setDraggingType] = useState<"min" | "max" | undefined>(undefined)
-    const chartRef = useRef<HTMLDivElement>(null)
+    const chartRef = useRef<HTMLDivElement>(undefined)
 
     const [isFirstStepValid, setIsFirstStepValid] = useState(false)
     const [isSecondStepValid, setIsSecondStepValid] = useState(false)
@@ -280,6 +280,11 @@ export default function PositionCreate()
             const currentPrice = await getCurrentPoolPrice() ?? 0
             const { effectiveMinPrice, effectiveMaxPrice } = getEffectiveRange(rangeType, minPrice, maxPrice)
 
+            if (!contracts?.UniswapV3FactoryContract) 
+            {
+                return
+            }
+
             await handleTokenInputDisplay
             (
                 selectedToken0.Address,
@@ -292,7 +297,7 @@ export default function PositionCreate()
                 setHideToken0DuringChange,
                 setHideToken1DuringChange,
                 signer,
-                contracts?.UniswapV3FactoryContract,
+                contracts.UniswapV3FactoryContract,
                 (address: string) => getPoolContract(signer, address)
             )
 
@@ -310,7 +315,7 @@ export default function PositionCreate()
                 token1Amount,
                 currentPrice,
                 computeTokenAmount,
-                contracts?.UniswapV3FactoryContract,
+                contracts.UniswapV3FactoryContract,
                 (address: string) => getPoolContract(signer, address),
                 (address, signer) => new ethers.Contract(address, ERC20Mintable.abi, signer)
             )
@@ -366,6 +371,11 @@ export default function PositionCreate()
         {
             if (!selectedToken0 || !selectedToken1 || fee == null) return
 
+            if (!contracts?.UniswapV3FactoryContract) 
+            {
+                return
+            }
+
             if (lastEditedField === "token0")
             {
                 await updateTokenAmounts
@@ -385,7 +395,7 @@ export default function PositionCreate()
                     token0Amount,
                     token1Amount,
                     signer,
-                    contracts?.UniswapV3FactoryContract,
+                    contracts.UniswapV3FactoryContract,
                     (address: string) => getPoolContract(signer, address)
                 )
             }
@@ -409,7 +419,7 @@ export default function PositionCreate()
                     token0Amount,
                     token1Amount,
                     signer,
-                    contracts?.UniswapV3FactoryContract,
+                    contracts.UniswapV3FactoryContract,
                     (address: string) => getPoolContract(signer, address)
                 )
             }
@@ -567,7 +577,7 @@ export default function PositionCreate()
                 catch (error) 
                 {
                     console.log(error)
-                    return null
+                    return undefined
                 }
             }
             else
@@ -660,12 +670,21 @@ export default function PositionCreate()
 
             try
             {
+                if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
+                {
+                    throw new Error("Missing required data: contracts, tokens, or fee")
+                }
+
                 const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
                 if (!poolExist) 
                 {
-                    const factoryCreatePoolTx = await contracts?.UniswapV3FactoryContract?.createPool(selectedToken0.Address, selectedToken1.Address, fee)
+                    const factoryCreatePoolTx = await contracts.UniswapV3FactoryContract.createPool(selectedToken0.Address, selectedToken1.Address, fee)
                     const factoryCreatePoolReceipt = await factoryCreatePoolTx.wait()
                     const poolAddress = await contracts?.UniswapV3FactoryContract?.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
+                if (!poolAddress) 
+                {
+                    throw new Error("Could not retrieve pool address")
+                }
                     const poolContract = getPoolContract(signer, poolAddress)
                     const sqrtPriceX96 = priceToSqrtPBigNumber(currentPrice)
                     const poolInitializeTx = await poolContract?.initialize(sqrtPriceX96)
@@ -750,7 +769,16 @@ export default function PositionCreate()
 
     const getTwapPrice = async () => 
     {
-        const poolAddress = await contracts?.UniswapV3FactoryContract?.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
+        if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
+        {
+            throw new Error("Missing required data: contracts, tokens, or fee")
+        }
+        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
+
+        if (!poolAddress) 
+        {
+            throw new Error("Could not retrieve pool address")
+        }
         const poolContract = getPoolContract(signer, poolAddress)
         
         const secondsAgos = [65, 0]
@@ -1038,7 +1066,7 @@ export default function PositionCreate()
                                 </Tabs.List>
 
                                 <Tabs.Panel value="full_range">
-                                    <div className="relative select-none" ref={chartRef}>
+                                    <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
                                     <ResponsiveContainer width="100%" height={300}>
                                         <LineChart data={data}>
                                         <CartesianGrid strokeDasharray="3 3" />
@@ -1207,7 +1235,7 @@ export default function PositionCreate()
                                 </Tabs.Panel>
 
                                 <Tabs.Panel value="custom_range">
-                                    <div className="relative select-none" ref={chartRef}>
+                                    <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
                                     <ResponsiveContainer width="100%" height={300}>
                                         <LineChart data={data}>
                                         <CartesianGrid strokeDasharray="3 3" />

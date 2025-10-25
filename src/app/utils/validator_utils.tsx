@@ -1,4 +1,5 @@
-import { Signer, Provider, ethers, parseEther } from "ethers"
+import { ethers, parseEther } from "ethers"
+import { UniswapV3FactoryContract } from '../redux/blockchain_slice'
 
 export interface CryptocurrencyDetail 
 {
@@ -46,7 +47,7 @@ export const validateSecondStep = async (
     token1Amount: string,
     currentPrice: number,
     computeTokenAmount: Function,
-    uniswapV3FactoryContract: any,
+    uniswapV3FactoryContract: UniswapV3FactoryContract,
     getPoolContract: GetPoolContract,
     erc20Contract: GetERC20Contract
 ): Promise<{ isValid: boolean, errorMessage: string }> => 

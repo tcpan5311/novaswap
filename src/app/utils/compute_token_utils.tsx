@@ -3,6 +3,7 @@ import { Token, CurrencyAmount } from '@uniswap/sdk-core'
 import { ethers } from 'ethers'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import JSBI from 'jsbi'
+import { UniswapV3FactoryContract } from '../redux/blockchain_slice'
 
 export type GetPoolContract = (address: string) => ethers.Contract | undefined
 
@@ -75,7 +76,7 @@ export const computeTokenAmount = async (
     token1Amount: string,
     minPrice: number,
     maxPrice: number,
-    uniswapV3FactoryContract: any,
+    uniswapV3FactoryContract: UniswapV3FactoryContract | undefined,
     getPoolContract: GetPoolContract
 ): Promise<{ amountA: string; amountB: string }> => 
     {
@@ -249,7 +250,7 @@ export const updateTokenAmounts = async (
         token1Amount: string,
         minPrice: number,
         maxPrice: number,
-        uniswapV3FactoryContract: any,
+        uniswapV3FactoryContract: UniswapV3FactoryContract | undefined,
         getPoolContract: GetPoolContract
     ) => Promise<{ amountA: string; amountB: string }>,
     setToken0Amount: (value: string) => void,
@@ -258,7 +259,7 @@ export const updateTokenAmounts = async (
     token0Amount: string,
     token1Amount: string,
     signer: ethers.Signer | undefined,
-    uniswapV3FactoryContract: any,
+    uniswapV3FactoryContract: UniswapV3FactoryContract | undefined,
     getPoolContract: GetPoolContract
 ): Promise<void> => 
 {
@@ -325,13 +326,13 @@ export const handleTokenInputDisplay = async (
         token1Amount: string,
         minPrice: number,
         maxPrice: number,
-        uniswapV3FactoryContract: any,
+        uniswapV3FactoryContract: UniswapV3FactoryContract | undefined,
     getPoolContract: GetPoolContract
     ) => Promise<{ amountA: string; amountB: string }>,
     setHideToken0DuringChange: (value: boolean) => void,
     setHideToken1DuringChange: (value: boolean) => void,
     signer: ethers.Signer | undefined,
-    uniswapV3FactoryContract: any,
+    uniswapV3FactoryContract: UniswapV3FactoryContract | undefined,
     getPoolContract: GetPoolContract
 ) => 
 {

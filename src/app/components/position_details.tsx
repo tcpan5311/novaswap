@@ -296,6 +296,11 @@ export default function PositionDetails()
             token1Address: selectedPosition.token1Address
         }))
 
+        if (!contracts?.UniswapV3FactoryContract) 
+        {
+            return
+        }
+
         await handleTokenInputDisplay
         (
             selectedPosition.token0Address,  
@@ -308,7 +313,7 @@ export default function PositionDetails()
             setHideToken0DuringChange,
             setHideToken1DuringChange,
             signer,
-            uniswapV3FactoryContract,
+            contracts.UniswapV3FactoryContract,
             (address: string) => getPoolContract(signer, address) 
         )
         
@@ -330,7 +335,7 @@ export default function PositionDetails()
             token0Amount,
             token1Amount,
             signer,
-            uniswapV3FactoryContract,
+            contracts.UniswapV3FactoryContract,
             (address: string) => getPoolContract(signer, address) 
             )
         }
@@ -353,7 +358,7 @@ export default function PositionDetails()
                 token0Amount,
                 token1Amount,
                 signer,
-                uniswapV3FactoryContract,
+                contracts.UniswapV3FactoryContract,
                 (address: string) => getPoolContract(signer, address) 
             )
         }
