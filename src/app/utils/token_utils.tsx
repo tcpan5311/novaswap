@@ -1,3 +1,5 @@
+import { CryptocurrencyDetail, TokenSetter } from "../redux/types"
+
 interface VerifyTokenResponse 
 {
   tokenId: string
@@ -60,6 +62,31 @@ export async function fetchVerifyToken(tokenParam: string): Promise<VerifyTokenR
 
     const data: VerifyTokenResponse = await res.json()
     return data
+}
+
+export const handleTokenSelect = (selectedItem: CryptocurrencyDetail | undefined, currentToken: CryptocurrencyDetail | undefined, otherToken: CryptocurrencyDetail | undefined, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
+{
+    if (!selectedItem) return
+
+    if (otherToken?.Address === selectedItem.Address) 
+    {
+        setOtherToken(undefined)
+        setCurrentToken(selectedItem)
+    } 
+    else if (currentToken?.Address === selectedItem.Address) 
+    {
+        setCurrentToken(selectedItem)
+    } 
+    else 
+    {
+        if (!otherToken && currentToken) 
+        {
+            setOtherToken(currentToken)
+        }
+        setCurrentToken(selectedItem)
+    }
+
+    closeModal()
 }
 
 

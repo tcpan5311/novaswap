@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { connectWallet, getPoolContract, fetchBalances } from '../redux/blockchain_slice'
+import { connectWallet, getPoolContract, fetchBalances, approveTokenTransaction } from '../redux/blockchain_slice'
 import { PositionData } from "../redux/types"
 import { useState, useEffect } from 'react'
 import { Grid, Stack, Tabs, Button, Group, Box, Text, Flex, Card, Input, Badge, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
@@ -394,13 +394,6 @@ export default function PositionDetails()
     }
     const { status: rangeStatus, color: rangeColor } = getRangeStatus(selectedPosition?.currentTick ?? 0, selectedPosition?.tickLower ?? 0, selectedPosition?.tickUpper ?? 0)
     
-    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
-    {
-        const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
-        const parsedAmount = ethers.parseEther(amount)
-        await approveTokenContract.approve(spenderAddress, parsedAmount)
-    }
-
     const addLiquidity = async () => 
     {
         if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null && selectedPosition) 

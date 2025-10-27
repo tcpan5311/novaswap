@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from 'react-redux'
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { connectWallet, fetchDeploymentData, loadBlockchainData, fetchBalances } from '../redux/blockchain_slice'
+import { connectWallet, fetchDeploymentData, loadBlockchainData, fetchBalances, approveTokenTransaction } from '../redux/blockchain_slice'
 import { useEffect } from 'react'
 import { MantineProvider} from '@mantine/core'
 import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
@@ -13,10 +13,10 @@ import React from 'react'
 import { useState, useRef } from 'react'
 import { IconTransfer, IconSettings, IconSearch } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
-import { UseBlockchain } from '../context/blockchain_context'
-import { CryptocurrencyDetail, TokenSetter } from '../utils/validator_utils'
+import { CryptocurrencyDetail } from '../redux/types'
 import { ethers, isAddress } from 'ethers'
 import { IconCoinFilled } from '@tabler/icons-react'
+import { handleTokenSelect } from "../utils/token_utils"
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount, TickListDataProvider } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
@@ -36,31 +36,6 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 
         return () => clearTimeout(handler)
     }, [...deps, delay])
-}
-
-const handleTokenSelect = (selectedItem: CryptocurrencyDetail | undefined, currentToken: CryptocurrencyDetail | undefined, otherToken: CryptocurrencyDetail | undefined, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
-{
-    if (!selectedItem) return
-
-    if (otherToken?.Address === selectedItem.Address) 
-    {
-        setOtherToken(undefined)
-        setCurrentToken(selectedItem)
-    }
-    else if (currentToken?.Address === selectedItem.Address) 
-    {
-        setCurrentToken(selectedItem)
-    }
-    else 
-    {
-        if (!otherToken && currentToken) 
-        {
-            setOtherToken(currentToken)
-        }
-        setCurrentToken(selectedItem)
-    }
-
-    closeModal()
 }
 
 const handleSwitchToken = 
@@ -208,8 +183,8 @@ export default function SwapMain()
             if (!selectedToken0 && !selectedToken1) return
             dispatch(fetchBalances
             ({
-                token0Address: selectedToken0 ? selectedToken0.Address : "",
-                token1Address: selectedToken1 ? selectedToken1.Address : ""
+                token0Address: selectedToken0?.Address,
+                token1Address: selectedToken1?.Address
             }))
         }
 
@@ -228,17 +203,6 @@ export default function SwapMain()
         updateTokenBalance()
     }, [signer, selectedToken0, selectedToken1, swapValue1, swapValue2])
 
-    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: bigint, signer: ethers.Signer) => 
-    {
-        if (!tokenAddress) 
-        {
-            throw new Error("Token address is required in approveTokenTransaction")
-        }
-
-        const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
-        await approveTokenContract.approve(spenderAddress, amount)
-    }
-
     const swapExactInput = async () => 
     {
         if (!quoterContract || !managerContract || !uniswapV3ManagerAddress || !selectedToken0 || !selectedToken1 || !signer) return
@@ -253,7 +217,7 @@ export default function SwapMain()
 
             if (inputAmount > 0n) 
             {
-                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, inputAmount, signer)
+                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, inputAmount.toString(), signer)
             }
 
             const swapParams = {

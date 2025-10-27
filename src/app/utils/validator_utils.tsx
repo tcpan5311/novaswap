@@ -1,11 +1,6 @@
 import { ethers, parseEther } from "ethers"
 import { UniswapV3FactoryContract } from '../redux/blockchain_slice'
-
-export interface CryptocurrencyDetail 
-{
-    Label: string
-    Address: string
-}
+import { CryptocurrencyDetail } from "../redux/types"
 
 export type GetPoolContract = (address: string) => ethers.Contract | undefined
 export type GetERC20Contract = (address: string, signer: ethers.Signer | undefined) => ethers.Contract | undefined

@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances} from "../redux/blockchain_slice"
+import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances, approveTokenTransaction} from "../redux/blockchain_slice"
 import { PositionData } from "../redux/types"
 import { CryptocurrencyDetail, TokenSetter } from "../redux/types"
 import { useState, useRef, useEffect, useMemo } from 'react'
@@ -16,6 +16,7 @@ import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
 import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount } from '@uniswap/v3-sdk'
 import { Token, CurrencyAmount} from '@uniswap/sdk-core'
+import { handleTokenSelect } from "../utils/token_utils"
 import {handlePriceMove, handleMouseUp, handleClampedPrice, handlePriceClick} from '../utils/position_create/price_range_utils'
 import {shouldAllowStep, processStepClick, processStepChange } from '../utils/position_create/stepper_utils'
 import {validateFirstStep, validateFullFirstStep, validateSecondStep} from '../utils/validator_utils'
@@ -445,31 +446,6 @@ export default function PositionCreate()
     ], 500)
     {/* === END: Core function of validator and token computation === */}
 
-    const handleTokenSelect = (selectedItem: CryptocurrencyDetail | undefined, currentToken: CryptocurrencyDetail | undefined, otherToken: CryptocurrencyDetail | undefined, setCurrentToken: TokenSetter, setOtherToken: TokenSetter, closeModal: () => void): void => 
-    {
-        if (!selectedItem) return
-
-        if (otherToken?.Address === selectedItem.Address) 
-        {
-            setOtherToken(undefined)
-            setCurrentToken(selectedItem)
-        }
-        else if (currentToken?.Address === selectedItem.Address) 
-        {
-            setCurrentToken(selectedItem)
-        }
-        else 
-        {
-            if (!otherToken && currentToken) 
-            {
-                setOtherToken(currentToken)
-            }
-            setCurrentToken(selectedItem)
-        }
-
-        closeModal()
-    }
-
     const updateTokenSelection = (shouldSet = true) => 
     {
         if (!selectedToken0 || !selectedToken1 || !fee) return
@@ -605,13 +581,6 @@ export default function PositionCreate()
         }
 
         return false
-    }
-
-    const approveTokenTransaction = async (tokenAddress: string | null, spenderAddress: string, amount: string, signer: ethers.Signer) => 
-    {
-        const approveTokenContract = new ethers.Contract(tokenAddress ?? (() => { throw new Error("Token address is required in approveTokenTransaction")})(), ERC20Mintable.abi, signer)
-        const parsedAmount = ethers.parseEther(amount)
-        await approveTokenContract.approve(spenderAddress, parsedAmount)
     }
 
     const findMatchingPosition = async (token0Address: string, token1Address: string, fee: number, lowerTick: number, upperTick: number, loadPositions: () => Promise<PositionData[]>): Promise<{ tokenId: bigint; position: PositionData } | null> => 

@@ -301,7 +301,7 @@ export const loadBlockchainPositions = createAsyncThunk<{ positions: PositionDat
     }
 })
 
-export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Balance: string }, { token0Address: string; token1Address: string }, { state: { blockchain: BlockchainState } }>("blockchain/fetchBalances", async ({ token0Address, token1Address }, { getState, rejectWithValue }) => 
+export const fetchBalances = createAsyncThunk< { token0Balance: string; token1Balance: string }, { token0Address?: string; token1Address?: string }, { state: { blockchain: BlockchainState } }>("blockchain/fetchBalances", async ({ token0Address, token1Address }, { getState, rejectWithValue }) => 
 {
     const { signer } = getState().blockchain
     if (!signer) return rejectWithValue("Signer not available")
@@ -310,21 +310,32 @@ export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Bal
     {
         const signerAddress = await signer.getAddress()
 
-        const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
-        const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+        let token0Balance = ""
+        let token1Balance = ""
 
-        const [rawBalance0, symbol0, rawBalance1, symbol1] = await Promise.all
-        ([
-            token0Contract.balanceOf(signerAddress),
-            token0Contract.symbol(),
-            token1Contract.balanceOf(signerAddress),
-            token1Contract.symbol(),
-        ])
-
-        return {
-            token0Balance: `${ethers.formatEther(rawBalance0)} ${symbol0}`,
-            token1Balance: `${ethers.formatEther(rawBalance1)} ${symbol1}`,
+        if (token0Address && ethers.isAddress(token0Address)) 
+        {
+            const token0Contract = new ethers.Contract(token0Address, ERC20Mintable.abi, signer)
+            const [rawBalance0, symbol0] = await Promise.all
+            ([
+                token0Contract.balanceOf(signerAddress),
+                token0Contract.symbol(),
+            ])
+            token0Balance = `${ethers.formatEther(rawBalance0)} ${symbol0}`
         }
+
+        if (token1Address && ethers.isAddress(token1Address)) 
+        {
+            const token1Contract = new ethers.Contract(token1Address, ERC20Mintable.abi, signer)
+            const [rawBalance1, symbol1] = await Promise.all
+            ([
+                token1Contract.balanceOf(signerAddress),
+                token1Contract.symbol(),
+            ])
+            token1Balance = `${ethers.formatEther(rawBalance1)} ${symbol1}`
+        }
+
+        return { token0Balance, token1Balance }
     } 
     catch (error) 
     {
@@ -335,6 +346,21 @@ export const fetchBalances = createAsyncThunk<{ token0Balance: string; token1Bal
         return rejectWithValue(String(error))
     }
 })
+
+export const approveTokenTransaction = async ( tokenAddress: string | undefined, spenderAddress: string | undefined, amount: string, signer: ethers.Signer) => 
+{
+    if (!tokenAddress) throw new Error("Token address is required in approveTokenTransaction")
+    if (!spenderAddress) throw new Error("Spender address is required in approveTokenTransaction")
+
+    const approveTokenContract = new ethers.Contract(tokenAddress, ERC20Mintable.abi, signer)
+    const parsedAmount = ethers.parseEther(amount)
+
+    const tx = await approveTokenContract.approve(spenderAddress, parsedAmount)
+    await tx.wait()
+
+    console.log(`Approved ${amount} tokens for spender: ${spenderAddress}`)
+    return tx
+}
 
 export const blockchainSlice = createSlice
 ({
