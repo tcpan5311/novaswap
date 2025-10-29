@@ -219,8 +219,8 @@ export const computeTokenAmount = async (
         }
 
         return {
-            amountA: roundIfCloseToWhole(amountTokenA.toFixed(18)),
-            amountB: roundIfCloseToWhole(amountTokenB.toFixed(18))
+            amountA: roundIfCloseToWhole(amountTokenA.toFixed(6)),
+            amountB: roundIfCloseToWhole(amountTokenB.toFixed(6))
         }
     } 
     catch 

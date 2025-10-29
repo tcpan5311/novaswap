@@ -30,16 +30,6 @@ const feeStructure =
     { label: 1, value: 10000, description: 'Best for exotic pairs.' },
 ]
 
-const data = 
-[
-    { date: "Mar 22", Price: 3000 },
-    { date: "Mar 23", Price: 4500 },
-    { date: "Mar 24", Price: 6200 },
-    { date: "Mar 24", Price: 7000 },
-    { date: "Mar 27", Price: 8500 },
-    { date: "Mar 28", Price: 10000 },
-]
-
 type data = {date: string; Price: number}
 
 const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
@@ -48,8 +38,8 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
     const highestPrice = Math.max(...prices)
     const lowestPrice = Math.min(...prices)
     
-    const graphMaxPrice = highestPrice * 1.2
-    const graphMinPrice = lowestPrice * 0.8
+    const graphMaxPrice = highestPrice * 1.5
+    const graphMinPrice = lowestPrice * 0.5
 
     return {
         highestPrice,
@@ -87,6 +77,19 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
         return () => clearTimeout(handler)
     }, [...deps, delay])
 }
+
+const formatYAxisTick = (value: number): string  => 
+{
+    if (value >= 1) 
+    {
+        return value.toFixed(2)
+    } 
+    else if (value > 0) 
+    {
+        return value.toExponential(2)
+    }
+    return value.toFixed(2)
+}
     
 export default function PositionCreate() 
 {
@@ -101,6 +104,7 @@ export default function PositionCreate()
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | undefined>(undefined)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | undefined>(undefined)
     const [fee, setFee] = useState<number | undefined>(undefined)
+    const [pricesData, setPricesData] = useState<{ date: string; price: number; secondsAgo: number }[]>([])
 
     const links = 
     [
@@ -132,7 +136,8 @@ export default function PositionCreate()
     const [opened2, { open: open2, close: close2 }] = useDisclosure(false)
 
     //For setting liquidity price range
-    let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(data)
+    const chartData = pricesData.map(item => ({ date: item.date, Price: item.price }))
+    let {highestPrice, lowestPrice, graphMaxPrice, graphMinPrice } = getPriceRange(chartData)
 
     const [rangeType, setRangeType] = useState<"full_range" | "custom_range">("full_range")
 
@@ -271,6 +276,15 @@ export default function PositionCreate()
             if (!await performPriceValidation()) return
 
             if (!selectedToken0 && !selectedToken1) return
+
+            try 
+            {
+                await getTwapPriceHistory()
+            } 
+            catch (error) 
+            {
+                console.error("Error fetching TWAP history:", error)
+            }
 
             dispatch(fetchBalances
             ({
@@ -583,48 +597,79 @@ export default function PositionCreate()
         return false
     }
 
-    const findMatchingPosition = async (token0Address: string, token1Address: string, fee: number, lowerTick: number, upperTick: number, loadPositions: () => Promise<PositionData[]>): Promise<{ tokenId: bigint; position: PositionData } | null> => 
+    let cachedPositionMap: Map<string, PositionData> | null = null
+    let cacheInitialized = false
+
+    const findMatchingPosition = async (token0Address: string, token1Address: string, fee: number, lowerTick: number, upperTick: number, loadBlockchainPositions: () => Promise<PositionData[]>): Promise<{ tokenId: bigint; position: PositionData } | null> => 
     {
 
         const token0Lower = token0Address.toLowerCase()
         const token1Lower = token1Address.toLowerCase()
 
-        const positions = await loadPositions()
-        console.log(positions)
+        if (!cacheInitialized) 
+        {
+            const positions = await loadBlockchainPositions()
+            cachedPositionMap = new Map<string, PositionData>()
+
+            for (const position of positions) 
+            {
+                const key = 
+                [
+                    position.token0Address.toLowerCase(),
+                    position.token1Address.toLowerCase(),
+                    position.fee,
+                    position.tickLower,
+                    position.tickUpper
+                ].join('-')
+
+                cachedPositionMap.set(key, position)
+            }
+
+            cacheInitialized = true
+            console.log(`✅ Cached ${positions.length} positions.`)
+        }
+
+        const searchKey = [token0Lower, token1Lower, fee, lowerTick, upperTick].join('-')
+        let found: PositionData | undefined
+
+        if (cachedPositionMap) 
+        {
+            found = cachedPositionMap.get(searchKey)
+        }
+
+        if (found) 
+        {
+            return { tokenId: found.tokenId, position: found }
+        }
+
+        const positions = await loadBlockchainPositions()
+        cachedPositionMap = new Map<string, PositionData>()
 
         for (const position of positions) 
         {
-            const positionToken0 = position.token0Address.toLowerCase()
-            const positionToken1 = position.token1Address.toLowerCase()
-            
-            console.log({token0Lower, token1Lower, fee, lowerTick, upperTick})
+            const key = 
+            [
+                position.token0Address.toLowerCase(),
+                position.token1Address.toLowerCase(),
+                position.fee,
+                position.tickLower,
+                position.tickUpper
+            ].join('-')
 
-            console.log("Checking position:", 
-            {
-                tokenId: position.tokenId.toString(),
-                positionToken0,
-                positionToken1,
-                fee: position.fee,
-                tickLower: position.tickLower,
-                tickUpper: position.tickUpper
-            })
+            cachedPositionMap.set(key, position)
+        }
 
-            if 
-            (
-                positionToken0 === token0Lower &&
-                positionToken1 === token1Lower &&
-                position.fee === fee &&
-                position.tickLower === lowerTick &&
-                position.tickUpper === upperTick
-            ) 
+        console.log(`♻️ Refreshed cache with ${positions.length} positions.`)
 
-            {
-                return { tokenId: position.tokenId, position }
-            }
+        found = cachedPositionMap.get(searchKey)
+        if (found) 
+        {
+            return { tokenId: found.tokenId, position: found }
         }
 
         return null
     }
+
     
     const addLiquidity = async () => 
     {
@@ -757,7 +802,78 @@ export default function PositionCreate()
         const averageTick = BigInt(tickDifference) / BigInt(secondsAgos[0])
         console.log(tickToPrice(Number(averageTick)))
     }
-    
+
+    const getTwapPriceHistory = async () => 
+    {
+        if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
+        {
+            throw new Error("Missing required data: contracts, tokens, or fee")
+        }
+
+        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress
+        (
+            selectedToken0?.Address, 
+            selectedToken1?.Address, 
+            fee
+        )
+
+        if (!poolAddress) 
+        {
+            throw new Error("Could not retrieve pool address")
+        }
+
+        const poolContract = getPoolContract(signer, poolAddress)
+
+        const pricesData: { date: string; price: number; secondsAgo: number }[] = []
+
+        const maxMinutes = 60   // total lookback time
+        const points = 12       // number of data points (e.g., every 5 minutes)
+        const intervalMinutes = Math.floor(maxMinutes / points) // 5 min intervals
+
+        console.log(`🕐 Starting TWAP history loop (latest back to 1 hour ago, ${points} points)...`)
+
+        for (let i = 1; i <= points; i++) 
+        {
+            const minutesAgo = i * intervalMinutes
+            const secondsAgo = minutesAgo * 60
+            
+            try 
+            {
+                const tickCumulatives = await poolContract?.observe([secondsAgo, 0])
+                
+                if (!tickCumulatives || tickCumulatives.length < 2) 
+                {
+                    console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): No data returned`)
+                    continue
+                }
+                
+                const tickDifference = tickCumulatives[1] - tickCumulatives[0]
+                const averageTick = BigInt(tickDifference) / BigInt(secondsAgo)
+                const price = tickToPrice(Number(averageTick))
+                
+                const now = new Date()
+                const pastTime = new Date(now.getTime() - secondsAgo * 1000)
+                
+                pricesData.unshift({  // latest first
+                    date: pastTime.toLocaleTimeString(),
+                    price: price,
+                    secondsAgo: secondsAgo
+                })
+                
+                console.log(`✅ ${minutesAgo}min ago: price = ${price.toFixed(6)}`)
+            }
+            catch (err) 
+            {
+                console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): Query failed -`, (err as Error).message)
+                continue 
+            }
+        }
+
+        console.log("🧾 Final TWAP history:", pricesData)
+        setPricesData(pricesData)
+        return pricesData
+    }
+
     return (
         <Box pos="relative">
             <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
@@ -766,7 +882,7 @@ export default function PositionCreate()
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={() => getTwapPrice()}
+            onClick={() => getTwapPriceHistory()}
             >
             Test Twap
             </Button>
@@ -1037,10 +1153,11 @@ export default function PositionCreate()
                                 <Tabs.Panel value="full_range">
                                     <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <LineChart data={data}>
+                                        <LineChart data={chartData}>
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis dataKey="date" />
-                                        <YAxis domain={[graphMinPrice, graphMaxPrice]} />
+                                        <YAxis domain={[graphMinPrice, graphMaxPrice]}
+                                        tickFormatter={formatYAxisTick} />
                                         <Tooltip />
                                         <ReferenceArea
                                             y1={graphMinPrice}
@@ -1206,10 +1323,11 @@ export default function PositionCreate()
                                 <Tabs.Panel value="custom_range">
                                     <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <LineChart data={data}>
+                                        <LineChart data={chartData}>
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis dataKey="date" />
-                                        <YAxis domain={[graphMinPrice, graphMaxPrice]} />
+                                        <YAxis domain={[graphMinPrice, graphMaxPrice]}
+                                        tickFormatter={formatYAxisTick} />
                                         <Tooltip />
                                         <ReferenceArea
                                             y1={Math.min(minPrice, maxPrice)}

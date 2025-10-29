@@ -233,6 +233,23 @@ export default function SwapMain()
             setSwapValue1(ethers.formatUnits(inputAmount, 18))
             setSwapValue2(ethers.formatUnits(calculatedOutput, 18))
             console.log("Exact input swap successful", managerSwapTx)
+
+            await dispatch(fetchBalances
+            ({
+                token0Address: selectedToken0.Address,
+                token1Address: selectedToken1.Address,
+            }))
+
+            try 
+            {
+                const [newOutput] = await quoterContract.quoteExactInput.staticCall(path, inputAmount)
+                setSwapValue2(ethers.formatUnits(newOutput, 18))
+                console.log("🔁 Quote updated successfully after swap")
+            } 
+            catch (quoteErr) 
+            {
+                console.log("⚠️ Error refreshing quote:", quoteErr)
+            }
         } 
         catch (err) 
         {
@@ -259,7 +276,7 @@ export default function SwapMain()
 
             if (maxAmountIn > 0n) 
             {
-                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, maxAmountIn, signer)
+                await approveTokenTransaction(selectedToken0.Address, uniswapV3ManagerAddress, ethers.formatEther(maxAmountIn), signer)
             }
 
             const swapParams = 
@@ -274,6 +291,23 @@ export default function SwapMain()
             const managerSwapTx = await managerSwap.wait()
 
             console.log("Exact output swap successful", managerSwapTx)
+
+            await dispatch(fetchBalances
+            ({
+                token0Address: selectedToken0.Address,
+                token1Address: selectedToken1.Address,
+            }))
+
+            try 
+            {
+                const [newInput] = await quoterContract.quoteExactOutput.staticCall(path, amountOut)
+                setSwapValue1(ethers.formatUnits(newInput, 18))
+                console.log("🔁 Quote updated successfully after swap")
+            } 
+            catch (quoteErr) 
+            {
+                console.log("⚠️ Error refreshing quote:", quoteErr)
+            }
         } 
         catch (err) 
         {

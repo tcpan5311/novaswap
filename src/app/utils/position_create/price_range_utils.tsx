@@ -23,7 +23,7 @@ export const handlePriceMove = async (event: MouseEvent, chartRef: React.RefObje
 
     newPrice = clamp(newPrice, minPriceAllowed, maxPriceAllowed - dynamicBuffer)
     setPrice(newPrice)
-    setPriceInput(newPrice.toFixed(18))
+    setPriceInput(newPrice.toFixed(6))
 }
 
 export const handleMouseUp = (setDraggingType: (type: "min" | "max" | undefined) => void, handlePriceMoveFns: Array<(event: MouseEvent) => Promise<void>>) => 
@@ -62,7 +62,7 @@ export const handleClampedPrice = async (type: "min" | "max", currentPoolPrice: 
 
         if (setPriceInput) 
         {
-            setPriceInput(clamped.toFixed(18))
+            setPriceInput(clamped.toFixed(6))
         }
 
         return clamped
@@ -89,7 +89,7 @@ export const handlePriceClick = (direction: "increase" | "decrease", currentPric
         const maxAllowed = currentPrice * 1.25
         const dynamicBuffer = calculateDynamicBuffer(minPrice, maxPrice)
         newPrice = clamp(newPrice, minAllowed, maxAllowed - dynamicBuffer)
-        setPriceInput(newPrice.toFixed(18))
+        setPriceInput(newPrice.toFixed(6))
         return newPrice
     }
 
