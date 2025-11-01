@@ -169,6 +169,7 @@ export default function PositionCreate()
     const [loading, setLoading] = useState(false)
 
     const [tokenSelection, setTokenSelection] = useState({displayToken0Name: '', displayToken1Name: '', displayFee: 0})
+    const [priceDataMessage, setPriceDataMessage] = useState<string | undefined>(undefined)
 
     useDebounceEffect(() => 
     {
@@ -704,6 +705,10 @@ export default function PositionCreate()
                     const poolInitializeTx = await poolContract?.initialize(sqrtPriceX96)
                     const poolInitializeTxReceipt = await poolInitializeTx.wait()
                     console.log(poolInitializeTxReceipt)
+
+                    const increaseObservationCardinalityTx = await poolContract?.increaseObservationCardinalityNext(64)
+                    const increaseObservationCardinalityTxReceipt = await increaseObservationCardinalityTx.wait()
+                    console.log(increaseObservationCardinalityTxReceipt)
                 }
 
                 const amount0Desired = ethers.parseEther(token0Amount)
@@ -781,29 +786,7 @@ export default function PositionCreate()
         }
     }
 
-    const getTwapPrice = async () => 
-    {
-        if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
-        {
-            throw new Error("Missing required data: contracts, tokens, or fee")
-        }
-        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress(selectedToken0?.Address, selectedToken1?.Address, fee)
-
-        if (!poolAddress) 
-        {
-            throw new Error("Could not retrieve pool address")
-        }
-        const poolContract = getPoolContract(signer, poolAddress)
-        
-        const secondsAgos = [65, 0]
-        const tickCumulatives = await poolContract?.observe(secondsAgos)
-        console.log(tickCumulatives)
-        const tickDifference = tickCumulatives[1] - tickCumulatives[0]
-        const averageTick = BigInt(tickDifference) / BigInt(secondsAgos[0])
-        console.log(tickToPrice(Number(averageTick)))
-    }
-
-    const getTwapPriceHistory = async () => 
+        const getTwapPriceHistory = async () => 
     {
         if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
         {
@@ -826,9 +809,9 @@ export default function PositionCreate()
 
         const pricesData: { date: string; price: number; secondsAgo: number }[] = []
 
-        const maxMinutes = 60   // total lookback time
-        const points = 12       // number of data points (e.g., every 5 minutes)
-        const intervalMinutes = Math.floor(maxMinutes / points) // 5 min intervals
+        const maxMinutes = 10   // total lookback time of 10 minutes
+        const points = 10       // number of data points (e.g., every 1 minutes)
+        const intervalMinutes = Math.floor(maxMinutes / points) // 1 min intervals
 
         console.log(`🕐 Starting TWAP history loop (latest back to 1 hour ago, ${points} points)...`)
 
@@ -869,10 +852,40 @@ export default function PositionCreate()
             }
         }
 
+        try 
+        {
+            const currentPoolPrice = await getCurrentPoolPrice()
+            if (currentPoolPrice !== undefined) 
+            {
+                const now = new Date()
+                pricesData.push
+                ({
+                    date: now.toLocaleTimeString(),
+                    price: currentPoolPrice,
+                    secondsAgo: 0
+                })
+                console.log(`✅ Current price: ${currentPoolPrice.toFixed(6)}`)
+            }
+        }
+        catch (err)
+        {
+            console.warn(`⚠️ Failed to fetch current price:`, (err as Error).message)
+        }
+
+        if (pricesData.length === 0) 
+        {
+            setPriceDataMessage("Oracle price is not available")
+        } 
+        else 
+        {
+            setPriceDataMessage(undefined)
+        }
+
         console.log("🧾 Final TWAP history:", pricesData)
         setPricesData(pricesData)
         return pricesData
     }
+
 
     return (
         <Box pos="relative">
@@ -1151,6 +1164,16 @@ export default function PositionCreate()
                                 </Tabs.List>
 
                                 <Tabs.Panel value="full_range">
+
+                                {priceDataMessage ? 
+                                (
+                                    <Box className="relative select-none h-[300px] flex items-center justify-center" ref={chartRef as React.Ref<HTMLDivElement>}>
+                                        <Text c="red" fw={600} size="lg">
+                                            {priceDataMessage}
+                                        </Text>
+                                    </Box>
+                                ) : 
+                                (
                                     <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
                                     <ResponsiveContainer width="100%" height={300}>
                                         <LineChart data={chartData}>
@@ -1174,7 +1197,7 @@ export default function PositionCreate()
                                         </LineChart>
                                     </ResponsiveContainer>
                                     </div>
-
+                                )}
                                     <Grid gutter="md" mt={15}>
                                     <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
                                         <Card shadow="sm" padding="lg" radius="md" withBorder>
@@ -1321,83 +1344,93 @@ export default function PositionCreate()
                                 </Tabs.Panel>
 
                                 <Tabs.Panel value="custom_range">
-                                    <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <LineChart data={chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="date" />
-                                        <YAxis domain={[graphMinPrice, graphMaxPrice]}
-                                        tickFormatter={formatYAxisTick} />
-                                        <Tooltip />
-                                        <ReferenceArea
-                                            y1={Math.min(minPrice, maxPrice)}
-                                            y2={Math.max(minPrice, maxPrice)}
-                                            fill="purple"
-                                            fillOpacity={0.1}
-                                        />
-                                        <ReferenceLine
-                                            y={minPrice}
-                                            stroke="red"
-                                            strokeWidth={5}
-                                            label={({ viewBox }) => (
-                                            <g>
-                                                <rect
-                                                x={viewBox.width / 2 - 20}
-                                                y={viewBox.y - 5}
-                                                width="40"
-                                                height="10"
+
+                                    {priceDataMessage ? (
+                                        <Box className="relative select-none h-[300px] flex items-center justify-center" ref={chartRef as React.Ref<HTMLDivElement>}>
+                                            <Text c="red" fw={600} size="lg">
+                                                {priceDataMessage}
+                                            </Text>
+                                        </Box>
+                                    ) : 
+                                    (
+                                        <div className="relative select-none" ref={chartRef as React.Ref<HTMLDivElement>}>
+                                        <ResponsiveContainer width="100%" height={300}>
+                                            <LineChart data={chartData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="date" />
+                                            <YAxis domain={[graphMinPrice, graphMaxPrice]}
+                                            tickFormatter={formatYAxisTick} />
+                                            <Tooltip />
+                                            <ReferenceArea
+                                                y1={Math.min(minPrice, maxPrice)}
+                                                y2={Math.max(minPrice, maxPrice)}
                                                 fill="purple"
-                                                onMouseDown={() => setDraggingType("min")}
-                                                cursor="ns-resize"
-                                                />
-                                                <text
-                                                x={viewBox.width / 2 - 15}
-                                                y={viewBox.y - 10}
-                                                fill="purple"
-                                                fontSize="11px"
-                                                fontWeight="bold"
-                                                >
-                                                {`Min: ${minPrice.toPrecision(8)}`}
-                                                </text>
-                                            </g>
-                                            )}
-                                        />
-                                        <ReferenceLine
-                                            y={maxPrice}
-                                            stroke="green"
-                                            strokeWidth={5}
-                                            label={({ viewBox }) => (
-                                            <g>
-                                                <rect
-                                                x={viewBox.width / 2 - 20}
-                                                y={viewBox.y - 5}
-                                                width="40"
-                                                height="10"
-                                                fill="purple"
-                                                onMouseDown={() => setDraggingType("max")}
-                                                cursor="ns-resize"
-                                                />
-                                                <text
-                                                x={viewBox.width / 2 - 15}
-                                                y={viewBox.y - 15}
-                                                fontSize="11px"
-                                                fill="purple"
-                                                fontWeight="bold"
-                                                >
-                                                {`Max: ${maxPrice.toPrecision(8)}`}
-                                                </text>
-                                            </g>
-                                            )}
-                                        />
-                                        <Line
-                                            type="monotone"
-                                            dataKey="Price"
-                                            stroke="purple"
-                                            strokeWidth={3}
-                                        />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                    </div>
+                                                fillOpacity={0.1}
+                                            />
+                                            <ReferenceLine
+                                                y={minPrice}
+                                                stroke="red"
+                                                strokeWidth={5}
+                                                label={({ viewBox }) => (
+                                                <g>
+                                                    <rect
+                                                    x={viewBox.width / 2 - 20}
+                                                    y={viewBox.y - 5}
+                                                    width="40"
+                                                    height="10"
+                                                    fill="purple"
+                                                    onMouseDown={() => setDraggingType("min")}
+                                                    cursor="ns-resize"
+                                                    />
+                                                    <text
+                                                    x={viewBox.width / 2 - 15}
+                                                    y={viewBox.y - 10}
+                                                    fill="purple"
+                                                    fontSize="11px"
+                                                    fontWeight="bold"
+                                                    >
+                                                    {`Min: ${minPrice.toPrecision(8)}`}
+                                                    </text>
+                                                </g>
+                                                )}
+                                            />
+                                            <ReferenceLine
+                                                y={maxPrice}
+                                                stroke="green"
+                                                strokeWidth={5}
+                                                label={({ viewBox }) => (
+                                                <g>
+                                                    <rect
+                                                    x={viewBox.width / 2 - 20}
+                                                    y={viewBox.y - 5}
+                                                    width="40"
+                                                    height="10"
+                                                    fill="purple"
+                                                    onMouseDown={() => setDraggingType("max")}
+                                                    cursor="ns-resize"
+                                                    />
+                                                    <text
+                                                    x={viewBox.width / 2 - 15}
+                                                    y={viewBox.y - 15}
+                                                    fontSize="11px"
+                                                    fill="purple"
+                                                    fontWeight="bold"
+                                                    >
+                                                    {`Max: ${maxPrice.toPrecision(8)}`}
+                                                    </text>
+                                                </g>
+                                                )}
+                                            />
+                                            <Line
+                                                type="monotone"
+                                                dataKey="Price"
+                                                stroke="purple"
+                                                strokeWidth={3}
+                                            />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                        </div>
+                                    )}
 
                                     <Grid gutter="md" mt={15}>
                                     <Grid.Col span={{ base: 12, md: 12, lg: 6 }}>
