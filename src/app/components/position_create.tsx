@@ -2,7 +2,7 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import {connectWallet, disconnectWallet, fetchDeploymentData, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances, approveTokenTransaction} from "../redux/blockchain_slice"
+import {connectWallet, getPoolContract, loadBlockchainData, loadBlockchainPositions, fetchBalances, doesPoolExist, getCurrentPoolPrice, fetchTwapPriceHistory, approveTokenTransaction} from "../redux/blockchain_slice"
 import { PositionData } from "../redux/types"
 import { CryptocurrencyDetail, TokenSetter } from "../redux/types"
 import { useState, useRef, useEffect, useMemo } from 'react'
@@ -32,7 +32,7 @@ const feeStructure =
 
 type data = {date: string; Price: number}
 
-const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number} => 
+const getPriceRange = (data: data[]): { highestPrice: number; lowestPrice: number, graphMaxPrice: number; graphMinPrice: number } => 
 {
     const prices = data.map((item: data) => item.Price)
     const highestPrice = Math.max(...prices)
@@ -47,6 +47,19 @@ const getPriceRange = (data: data[]): {highestPrice: number; lowestPrice: number
         graphMaxPrice,
         graphMinPrice
     }
+}
+
+const formatYAxisTick = (value: number): string  => 
+{
+    if (value >= 1) 
+    {
+        return value.toFixed(0)
+    } 
+    else if (value > 0) 
+    {
+        return value.toExponential(2)
+    }
+    return value.toFixed(0)
 }
 
 const getCanonicalOrder = (tokenA: CryptocurrencyDetail, tokenB: CryptocurrencyDetail) => 
@@ -77,24 +90,11 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
         return () => clearTimeout(handler)
     }, [...deps, delay])
 }
-
-const formatYAxisTick = (value: number): string  => 
-{
-    if (value >= 1) 
-    {
-        return value.toFixed(2)
-    } 
-    else if (value > 0) 
-    {
-        return value.toExponential(2)
-    }
-    return value.toFixed(2)
-}
     
 export default function PositionCreate() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance } = useSelector(blockchainSelector)
+    const { signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance, pricesData, priceDataMessage  } = useSelector(blockchainSelector)
 
     const router = useRouter()
     const viewportRef = useRef<HTMLDivElement>(null)
@@ -104,7 +104,6 @@ export default function PositionCreate()
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | undefined>(undefined)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | undefined>(undefined)
     const [fee, setFee] = useState<number | undefined>(undefined)
-    const [pricesData, setPricesData] = useState<{ date: string; price: number; secondsAgo: number }[]>([])
 
     const links = 
     [
@@ -169,7 +168,6 @@ export default function PositionCreate()
     const [loading, setLoading] = useState(false)
 
     const [tokenSelection, setTokenSelection] = useState({displayToken0Name: '', displayToken1Name: '', displayFee: 0})
-    const [priceDataMessage, setPriceDataMessage] = useState<string | undefined>(undefined)
 
     useDebounceEffect(() => 
     {
@@ -184,7 +182,16 @@ export default function PositionCreate()
 
         const attachListeners = async () => 
         {
-            const currentPrice = (await getCurrentPoolPrice()) 
+            if (!selectedToken0 || !selectedToken1 || !fee) return
+
+            const currentPrice = await dispatch(getCurrentPoolPrice
+            ({ 
+                token0Address: selectedToken0.Address, 
+                token1Address: selectedToken1.Address, 
+                fee, 
+                initialPrice 
+            })).unwrap()
+            
             if (!currentPrice) return
 
             const handleMouseMove = async (event: MouseEvent) => 
@@ -219,7 +226,16 @@ export default function PositionCreate()
 
     const validateMinPrice = async () => 
     {
-        const currentPrice = (await getCurrentPoolPrice()) 
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
+
          if (!currentPrice) return
 
         const clampedMin = await handleClampedPrice("min", currentPrice, maxPrice, setMinPrice, setMinPriceInput)
@@ -232,7 +248,16 @@ export default function PositionCreate()
 
     const validateMaxPrice = async () => 
     {
-        const currentPrice = (await getCurrentPoolPrice())
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
+        
         if (!currentPrice) return
 
         const clampedMax = await handleClampedPrice("max", currentPrice, minPrice, setMaxPrice, setMaxPriceInput)
@@ -245,7 +270,16 @@ export default function PositionCreate()
 
     const handleMinPriceClick = async (direction: "increase" | "decrease") => 
     {
-        const currentPrice = await getCurrentPoolPrice()
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
+        
         if (!currentPrice) return
 
         handlePriceClick(direction, currentPrice, minPrice, maxPrice, setMinPrice, setMinPriceInput)
@@ -253,7 +287,16 @@ export default function PositionCreate()
 
     const handleMaxPriceClick = async (direction: "increase" | "decrease") => 
     {
-        const currentPrice = await getCurrentPoolPrice()
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
+        
         if (!currentPrice) return
 
         handlePriceClick(direction, currentPrice, minPrice, maxPrice, setMaxPrice, setMaxPriceInput)
@@ -279,8 +322,24 @@ export default function PositionCreate()
             if (!selectedToken0 && !selectedToken1) return
 
             try 
-            {
-                await getTwapPriceHistory()
+            {        
+                const currentPrice = await dispatch(getCurrentPoolPrice
+                ({ 
+                    token0Address: selectedToken0.Address, 
+                    token1Address: selectedToken1.Address, 
+                    fee, 
+                    initialPrice 
+                })).unwrap()
+
+                if (!currentPrice) return
+                
+                await dispatch(fetchTwapPriceHistory
+                ({ 
+                    token0Address: selectedToken0.Address,
+                    token1Address: selectedToken1.Address,
+                    fee,
+                    initialPrice 
+                })).unwrap()
             } 
             catch (error) 
             {
@@ -293,7 +352,14 @@ export default function PositionCreate()
                 token1Address: selectedToken1?.Address
             }))
 
-            const currentPrice = await getCurrentPoolPrice() ?? 0
+            const currentPrice = await dispatch(getCurrentPoolPrice
+            ({ 
+                token0Address: selectedToken0.Address, 
+                token1Address: selectedToken1.Address, 
+                fee, 
+                initialPrice 
+            })).unwrap()
+
             const { effectiveMinPrice, effectiveMaxPrice } = getEffectiveRange(rangeType, minPrice, maxPrice)
 
             if (!contracts?.UniswapV3FactoryContract) 
@@ -356,13 +422,18 @@ export default function PositionCreate()
                 return false
             }
 
+            const checkPoolExists = async (token0Address: string, token1Address: string, fee: number) => 
+            {
+                return await dispatch(doesPoolExist({ token0Address, token1Address, fee })).unwrap()
+            }
+
             const { isValid, poolExists } = await validateFullFirstStep
             (
                 selectedToken0.Address,
                 selectedToken1.Address,
                 fee,
                 initialPrice,
-                doesPoolExist
+                checkPoolExists
             )
 
             setIsFirstStepValid(isValid)
@@ -512,11 +583,27 @@ export default function PositionCreate()
     {
         processStepClick(step, highestStepVisited, setters, selectedToken0, selectedToken1, fee, validateFirstStep)
     }
+    
 
     const shouldAllowSelectStep = (step: number) => shouldAllowStep(step, highestStepVisited)
 
-    const handleBack = () => processStepChange('back', stepActive, setters, getCurrentPoolPrice)
-    const handleNext = () => processStepChange('next', stepActive, setters, getCurrentPoolPrice)
+    const getCurrentPoolPriceCallback = async () => 
+    {
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
+
+        return currentPrice
+    }
+
+    const handleBack = () => processStepChange('back', stepActive, setters, getCurrentPoolPriceCallback)
+    const handleNext = () => processStepChange('next', stepActive, setters, getCurrentPoolPriceCallback)
     {/* === END: Core function of stepper === */}
 
 
@@ -547,55 +634,6 @@ export default function PositionCreate()
         if (parsed >= 1 && decimals > maxDecimalsForOneOrMore) return null
 
         return parsed
-    }
-
-    const getCurrentPoolPrice = async () => 
-    {
-        if(contracts?.UniswapV3FactoryContract && selectedToken0 && selectedToken1 && fee)
-        {
-            const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
-            if (poolExist) 
-            {
-                try 
-                {
-                    const poolAddress = await contracts?.UniswapV3FactoryContract.getPoolAddress(selectedToken0.Address, selectedToken1.Address, fee)
-                    const poolContract = getPoolContract(signer, poolAddress)
-                    const slot0 = await poolContract?.slot0()
-                    const sqrtPriceX96 = slot0.sqrtPriceX96
-                    const price = sqrtPToPriceNumber(sqrtPriceX96)
-                    return price
-                } 
-                catch (error) 
-                {
-                    console.log(error)
-                    return undefined
-                }
-            }
-            else
-            {
-                const price = initialPrice
-                return price
-            }
-        }
-    }
-
-    const doesPoolExist = async (token0Address: string | null, token1Address: string | null, fee: number | null): Promise<boolean> => 
-    {
-        if (contracts?.UniswapV3FactoryContract && token0Address && token1Address && fee) 
-        {
-            try 
-            {
-                const poolAddress = await contracts?.UniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
-                return poolAddress !== '0x0000000000000000000000000000000000000000'
-            } 
-            catch (error) 
-            {
-                console.error("Error checking pool existence:", error)
-                return false
-            }
-        }
-
-        return false
     }
 
     let cachedPositionMap: Map<string, PositionData> | null = null
@@ -675,7 +713,15 @@ export default function PositionCreate()
     const addLiquidity = async () => 
     {
 
-        let currentPrice = await getCurrentPoolPrice() ?? 0
+        if (!selectedToken0 || !selectedToken1 || !fee) return
+
+        const currentPrice = await dispatch(getCurrentPoolPrice
+        ({ 
+            token0Address: selectedToken0.Address, 
+            token1Address: selectedToken1.Address, 
+            fee, 
+            initialPrice 
+        })).unwrap()
 
         if (isConnected && signer && deploymentAddresses && contracts && selectedToken0 && selectedToken1 && fee && minPrice && maxPrice && token0Amount && token1Amount) 
         {
@@ -690,7 +736,7 @@ export default function PositionCreate()
                     throw new Error("Missing required data: contracts, tokens, or fee")
                 }
 
-                const poolExist = await doesPoolExist(selectedToken0.Address, selectedToken1.Address, fee)
+                const poolExist = await dispatch(doesPoolExist({ token0Address: selectedToken0.Address, token1Address: selectedToken1.Address, fee })).unwrap()
                 if (!poolExist) 
                 {
                     const factoryCreatePoolTx = await contracts.UniswapV3FactoryContract.createPool(selectedToken0.Address, selectedToken1.Address, fee)
@@ -786,127 +832,26 @@ export default function PositionCreate()
         }
     }
 
-        const getTwapPriceHistory = async () => 
-    {
-        if (!contracts?.UniswapV3FactoryContract || !selectedToken0 || !selectedToken1 || !fee) 
-        {
-            throw new Error("Missing required data: contracts, tokens, or fee")
-        }
-
-        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress
-        (
-            selectedToken0?.Address, 
-            selectedToken1?.Address, 
-            fee
-        )
-
-        if (!poolAddress) 
-        {
-            throw new Error("Could not retrieve pool address")
-        }
-
-        const poolContract = getPoolContract(signer, poolAddress)
-
-        const pricesData: { date: string; price: number; secondsAgo: number }[] = []
-
-        const maxMinutes = 10   // total lookback time of 10 minutes
-        const points = 10       // number of data points (e.g., every 1 minutes)
-        const intervalMinutes = Math.floor(maxMinutes / points) // 1 min intervals
-
-        console.log(`🕐 Starting TWAP history loop (latest back to 1 hour ago, ${points} points)...`)
-
-        for (let i = 1; i <= points; i++) 
-        {
-            const minutesAgo = i * intervalMinutes
-            const secondsAgo = minutesAgo * 60
-            
-            try 
-            {
-                const tickCumulatives = await poolContract?.observe([secondsAgo, 0])
-                
-                if (!tickCumulatives || tickCumulatives.length < 2) 
-                {
-                    console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): No data returned`)
-                    continue
-                }
-                
-                const tickDifference = tickCumulatives[1] - tickCumulatives[0]
-                const averageTick = BigInt(tickDifference) / BigInt(secondsAgo)
-                const price = tickToPrice(Number(averageTick))
-                
-                const now = new Date()
-                const pastTime = new Date(now.getTime() - secondsAgo * 1000)
-                
-                pricesData.unshift({  // latest first
-                    date: pastTime.toLocaleTimeString(),
-                    price: price,
-                    secondsAgo: secondsAgo
-                })
-                
-                console.log(`✅ ${minutesAgo}min ago: price = ${price.toFixed(6)}`)
-            }
-            catch (err) 
-            {
-                console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): Query failed -`, (err as Error).message)
-                continue 
-            }
-        }
-
-        try 
-        {
-            const currentPoolPrice = await getCurrentPoolPrice()
-            if (currentPoolPrice !== undefined) 
-            {
-                const now = new Date()
-                pricesData.push
-                ({
-                    date: now.toLocaleTimeString(),
-                    price: currentPoolPrice,
-                    secondsAgo: 0
-                })
-                console.log(`✅ Current price: ${currentPoolPrice.toFixed(6)}`)
-            }
-        }
-        catch (err)
-        {
-            console.warn(`⚠️ Failed to fetch current price:`, (err as Error).message)
-        }
-
-        if (pricesData.length === 0) 
-        {
-            setPriceDataMessage("Oracle price is not available")
-        } 
-        else 
-        {
-            setPriceDataMessage(undefined)
-        }
-
-        console.log("🧾 Final TWAP history:", pricesData)
-        setPricesData(pricesData)
-        return pricesData
-    }
-
-
     return (
         <Box pos="relative">
             <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ fixed: true, radius: "sm", blur: 2 }} />
             {/* Test function for quotePool and swapToken */}
-            <Button
+            {/* <Button
             fullWidth
             radius="md"
             className="mt-[5%]"
-            onClick={() => getTwapPriceHistory()}
+            onClick={() => fetchTwapPriceHistory()}
             >
             Test Twap
-            </Button>
+            </Button> */}
 
-            <Button
+            {/* <Button
             fullWidth
             radius="md"
             className="mt-[5%]"
             >
             Validate Sufficient Token
-            </Button>
+            </Button> */}
 
             <Grid ml={200} mt={50}>
                 <Grid.Col span={12}>

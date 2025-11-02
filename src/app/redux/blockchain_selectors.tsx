@@ -12,8 +12,12 @@ export const blockchainSelector = createSelector
     (state: RootState) => state.blockchain.cryptocurrencies,
     (state: RootState) => state.blockchain.token0Balance,
     (state: RootState) => state.blockchain.token1Balance,
+    (state: RootState) => state.blockchain.poolExists,
+    (state: RootState) => state.blockchain.currentPrice,
+    (state: RootState) => state.blockchain.pricesData,
+    (state: RootState) => state.blockchain.priceDataMessage,
 
-    (account, signer, isConnected, deploymentAddresses, contracts, positions, cryptocurrencies, token0Balance, token1Balance) => 
+    (account, signer, isConnected, deploymentAddresses, contracts, positions, cryptocurrencies, token0Balance, token1Balance, poolExists, currentPrice, pricesData, priceDataMessage) => 
     ({
         account,
         signer,
@@ -23,6 +27,10 @@ export const blockchainSelector = createSelector
         positions,
         cryptocurrencies,
         token0Balance,
-        token1Balance
+        token1Balance,
+        poolExists,
+        currentPrice,
+        pricesData,
+        priceDataMessage
     })
 )

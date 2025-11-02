@@ -57,6 +57,10 @@ export interface BlockchainState
     positions: PositionData[]
     token0Balance: string
     token1Balance: string
+    poolExists: boolean,
+    currentPrice: number | undefined
+    pricesData: { date: string; price: number; secondsAgo: number }[]
+    priceDataMessage: string | undefined
 }
 
 const initialState: BlockchainState = 
@@ -82,6 +86,10 @@ const initialState: BlockchainState =
     positions: [],
     token0Balance: "",
     token1Balance: "",
+    poolExists: false,
+    currentPrice: undefined,
+    pricesData: [],
+    priceDataMessage: undefined
 }
 
 export const initializeMetaMaskSDK = createAsyncThunk("blockchain/initSDK", async () => 
@@ -347,6 +355,162 @@ export const fetchBalances = createAsyncThunk< { token0Balance: string; token1Ba
     }
 })
 
+export const doesPoolExist = createAsyncThunk<boolean, { token0Address: string, token1Address: string, fee: number }, { state: { blockchain: BlockchainState } }>("blockchain/doesPoolExist", async ({ token0Address, token1Address, fee }, { getState, rejectWithValue }) => 
+{
+    try 
+    {
+        const { contracts } = getState().blockchain
+        
+        if (!contracts.UniswapV3FactoryContract) return rejectWithValue("Missing required contract")
+
+        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
+        return poolAddress !== '0x0000000000000000000000000000000000000000'
+    } 
+    catch (error) 
+    {
+        console.error("Error checking pool existence:", error)
+        return rejectWithValue(error instanceof Error ? error.message : "Unknown error")
+    }
+})
+
+export const getCurrentPoolPrice = createAsyncThunk<number, { token0Address: string, token1Address: string, fee: number, initialPrice: number }, { state: { blockchain: BlockchainState } }>("blockchain/getCurrentPoolPrice", async ({ token0Address, token1Address, fee, initialPrice }, { getState, dispatch, rejectWithValue }) => 
+{
+    try 
+    {
+        const { contracts, signer } = getState().blockchain
+        
+        if (!contracts.UniswapV3FactoryContract || !signer) 
+        {
+            return rejectWithValue("Missing required contracts or signer")
+        }
+        
+        const poolExist = await dispatch(doesPoolExist({ token0Address, token1Address, fee })).unwrap()
+        
+        if (poolExist) 
+        {
+            const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
+            const poolContract = getPoolContract(signer, poolAddress)
+            const slot0 = await poolContract?.slot0()
+            const sqrtPriceX96 = slot0.sqrtPriceX96
+            const price = sqrtPToPriceNumber(sqrtPriceX96)
+            return price
+        } 
+        else 
+        {
+            return initialPrice
+        }
+    } 
+    catch (error) 
+    {
+        console.error("Error getting current pool price:", error)
+        return rejectWithValue(error instanceof Error ? error.message : "Unknown error")
+    }
+})
+
+export const fetchTwapPriceHistory = createAsyncThunk<{ pricesData: { date: string; price: number; secondsAgo: number }[]; priceDataMessage: string | undefined }, { token0Address: string; token1Address: string; fee: number; initialPrice?: number }, { state: { blockchain: BlockchainState } }>("blockchain/fetchTwapPriceHistory", async ({ token0Address, token1Address, fee, initialPrice = 0 }, { getState, dispatch, rejectWithValue }) => 
+{
+    try 
+    {
+        const { signer, contracts } = getState().blockchain
+        if (!signer || !contracts.UniswapV3FactoryContract) 
+        {
+            throw new Error("Missing required data: contracts or signer")
+        }
+
+        const poolAddress = await contracts.UniswapV3FactoryContract.getPoolAddress(token0Address, token1Address, fee)
+        if (!poolAddress) 
+        {
+            throw new Error("Could not retrieve pool address")
+        }
+
+        const poolContract = getPoolContract(signer, poolAddress)
+        const pricesData: { date: string; price: number; secondsAgo: number }[] = []
+
+        const maxMinutes = 10
+        const points = 10
+        const intervalMinutes = Math.floor(maxMinutes / points)
+
+        console.log(`🕐 Starting TWAP history loop (latest back to 1 hour ago, ${points} points)...`)
+
+        for (let i = 1; i <= points; i++) 
+        {
+            const minutesAgo = i * intervalMinutes
+            const secondsAgo = minutesAgo * 60
+            
+            try 
+            {
+                const tickCumulatives = await poolContract?.observe([secondsAgo, 0])
+                
+                if (!tickCumulatives || tickCumulatives.length < 2) 
+                {
+                    console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): No data returned`)
+                    continue
+                }
+                
+                const tickDifference = tickCumulatives[1] - tickCumulatives[0]
+                const averageTick = BigInt(tickDifference) / BigInt(secondsAgo)
+                const price = tickToPrice(Number(averageTick))
+                
+                const now = new Date()
+                const pastTime = new Date(now.getTime() - secondsAgo * 1000)
+                
+                pricesData.unshift({
+                    date: pastTime.toLocaleTimeString(),
+                    price: price,
+                    secondsAgo: secondsAgo
+                })
+                
+                console.log(`✅ ${minutesAgo}min ago: price = ${price.toFixed(6)}`)
+            }
+            catch (err) 
+            {
+                console.warn(`⚠️ ${minutesAgo}min (${secondsAgo}s ago): Query failed -`, (err as Error).message)
+                continue 
+            }
+        }
+
+        try 
+        {
+            const poolExists = await dispatch(doesPoolExist({ token0Address, token1Address, fee })).unwrap()
+
+            if (poolExists) 
+            {
+                const currentPoolPrice = await dispatch(getCurrentPoolPrice({ token0Address, token1Address, fee, initialPrice })).unwrap()
+                
+                const now = new Date()
+                pricesData.push
+                ({
+                    date: now.toLocaleTimeString(),
+                    price: currentPoolPrice,
+                    secondsAgo: 0
+                })
+                console.log(`✅ Current price: ${currentPoolPrice.toFixed(6)}`)
+            }
+        }
+        catch (err)
+        {
+            console.warn(`⚠️ Failed to fetch current price:`, (err as Error).message)
+        }
+
+        let priceDataMessage: string | undefined = undefined
+        if (pricesData.length === 0) 
+        {
+            priceDataMessage = "Oracle price is not available"
+        }
+
+        console.log("🧾 Final TWAP history:", pricesData)
+        return { pricesData, priceDataMessage }
+    } 
+    catch (error) 
+    {
+        if (error instanceof Error) 
+        {
+            return rejectWithValue(error.message)
+        }
+        return rejectWithValue(String(error))
+    }
+})
+
 export const approveTokenTransaction = async ( tokenAddress: string | undefined, spenderAddress: string | undefined, amount: string, signer: ethers.Signer) => 
 {
     if (!tokenAddress) throw new Error("Token address is required in approveTokenTransaction")
@@ -413,6 +577,16 @@ export const blockchainSlice = createSlice
         {
             state.token0Balance = action.payload.token0Balance
             state.token1Balance = action.payload.token1Balance
+        }).addCase(doesPoolExist.fulfilled, (state, action) => 
+        {
+            state.poolExists = action.payload
+        }).addCase(getCurrentPoolPrice.fulfilled, (state, action) => 
+        {
+            state.currentPrice = action.payload
+        }). addCase(fetchTwapPriceHistory.fulfilled, (state, action) => 
+        {
+            state.pricesData = action.payload.pricesData
+            state.priceDataMessage = action.payload.priceDataMessage
         })
     },
 })

@@ -2,9 +2,9 @@
 import { useSelector, useDispatch } from "react-redux"
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { connectWallet, getPoolContract, fetchBalances, approveTokenTransaction } from '../redux/blockchain_slice'
+import { connectWallet, getPoolContract, fetchBalances, approveTokenTransaction, fetchTwapPriceHistory } from '../redux/blockchain_slice'
 import { PositionData } from "../redux/types"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Grid, Stack, Tabs, Button, Group, Box, Text, Flex, Card, Input, Badge, ActionIcon, Divider, Modal, LoadingOverlay } from '@mantine/core'
 import JSBI from 'jsbi'
 import UniswapV3Pool from '../../../contracts/UniswapV3Pool.json'
@@ -18,7 +18,7 @@ import { useDisclosure } from '@mantine/hooks'
 import { useRouter } from 'next/navigation'
 import { sqrtPToPriceNumber, priceToTick, tickToPrice, roundIfCloseToWhole, computeTokenAmount, updateTokenAmounts, handleTokenInputDisplay} from '../utils/compute_token_utils'
 import { validateAmounts, validatePercent } from '../utils/validator_utils'
-import {LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,} from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { fetchVerifyToken } from '../utils/token_utils'
 
 const quickSelectOptions = 
@@ -27,16 +27,6 @@ const quickSelectOptions =
     { label: '50%', value: 50 },
     { label: '75%', value: 75 },
     { label: 'Max', value: 100 },
-]
-
-const mockData = 
-[
-    { name: "Day 1", value: 400 },
-    { name: "Day 2", value: 300 },
-    { name: "Day 3", value: 600 },
-    { name: "Day 4", value: 800 },
-    { name: "Day 5", value: 500 },
-    { name: "Day 6", value: 700 },
 ]
 
 const tabData = 
@@ -53,6 +43,36 @@ const nftTabData =
     { value: 'Chart', label: 'Chart' },
     { value: 'Nft', label: 'NFT' },
 ]
+
+const getPriceRange = (data: {date: string; price: number}[]): { highestPrice: number; lowestPrice: number; graphMaxPrice: number; graphMinPrice: number} => 
+{
+    const prices = data.map((item) => item.price)
+    const highestPrice = Math.max(...prices)
+    const lowestPrice = Math.min(...prices)
+
+    const graphMaxPrice = highestPrice * 1.5
+    const graphMinPrice = lowestPrice * 0.5
+
+    return {
+        highestPrice,
+        lowestPrice,
+        graphMaxPrice,
+        graphMinPrice
+    }
+}
+
+const formatYAxisTick = (value: number): string => 
+{
+    if (value >= 1) 
+    {
+        return value.toFixed(0)
+    } 
+    else if (value > 0) 
+    {
+        return value.toExponential(2)
+    }
+    return value.toFixed(0)
+}
 
 const validatePercentInput = (input: string): number | null => 
 {
@@ -88,10 +108,12 @@ export function useDebounceEffect(callback: () => void, deps: any[], delay: numb
 export default function PositionDetails() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const { account, signer, isConnected, deploymentAddresses, contracts, token0Balance, token1Balance } = useSelector(blockchainSelector)
+    const { signer, isConnected, deploymentAddresses, contracts, token0Balance, token1Balance, pricesData, priceDataMessage } = useSelector(blockchainSelector)
 
     const [nftManagerContractAddress, setNftManagerContractAddress] = useState('')
     const [uniswapV3FactoryContract, setUniswapV3FactoryContract] = useState<ethers.Contract | null>(null)
+
+    const chartRef = useRef<HTMLDivElement>(undefined)
 
     const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null)
     const searchParams = useSearchParams()
@@ -262,19 +284,42 @@ export default function PositionDetails()
             if(!tokenId || error)
             {
                 router.replace('/position_main')
-                return
+                return null
             }
             else
             {
                 setTokenId(BigInt(tokenId))
                 const data = await loadPositionDetails(BigInt(tokenId))
                 setSelectedPosition(data)
+                return data
             }
-
         }
 
-    fetchPosition()
-    }, [searchParams, tokenId, signer, contracts, deploymentAddresses])
+        const initializePosition = async () => 
+        {
+            const positionData = await fetchPosition()
+            
+            if (positionData && signer && deploymentAddresses) 
+            {
+                try 
+                {
+                    await dispatch(fetchTwapPriceHistory
+                    ({
+                        token0Address: positionData.token0Address,
+                        token1Address: positionData.token1Address,
+                        fee: positionData.fee,
+                        initialPrice: positionData.currentPrice
+                    })).unwrap()
+                } 
+                catch (error) 
+                {
+                    console.error("Error fetching TWAP history:", error)
+                }
+            }
+        }
+
+        initializePosition()
+    }, [searchParams, signer, contracts, deploymentAddresses, dispatch])
 
     const runAllUpdates = async () => 
     {
@@ -559,19 +604,37 @@ export default function PositionDetails()
 
                     <Grid gutter={{ base: 20, md: 64 }} mt={20} px={8}>
                         <Grid.Col span={{ base: 12, md: 7 }}>
-                            <Card className="h-[400px] w-full">
-                                <Box className="w-full h-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={mockData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="name" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} dot={false} />
-                                    </LineChart>
-                                    </ResponsiveContainer>
+                            <Card className="h-[400px] w-full" ref={chartRef as React.Ref<HTMLDivElement>}>
+                                <Box className="w-full h-full relative select-none">
+                                    {priceDataMessage ? 
+                                    (
+                                        <Box className="h-full flex items-center justify-center">
+                                            <Text c="red" fw={600} size="lg">
+                                                {priceDataMessage}
+                                            </Text>
+                                        </Box>
+                                    ) : 
+                                    (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={pricesData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis dataKey="date" />
+                                                <YAxis 
+                                                    domain={[getPriceRange(pricesData).graphMinPrice, getPriceRange(pricesData).graphMaxPrice]}
+                                                    tickFormatter={formatYAxisTick}
+                                                />
+                                                <Tooltip />
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey="price"
+                                                    stroke="purple"
+                                                    strokeWidth={3}
+                                                    dot={false}
+                                                />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    )}
                                 </Box>
-
                             </Card>
 
                             <Grid gutter="md" mt={10} ml={50}>
