@@ -172,9 +172,11 @@ export const validateSwapStep = async (
     token1Address: string,
     token0Amount: string,
     token1Amount: string,
-    erc20Contract: GetERC20Contract
+    erc20Contract: GetERC20Contract,
+    poolExists: boolean
 ): Promise<{ isValid: boolean, errorMessage: string }> => 
 {
+    if (poolExists === false) return error("pool_not_found")
     if (!token0Address || !token1Address) return error("incomplete_fields")
     if (!isPositiveNumber(token0Amount) || !signer) return error("incomplete_fields")
 

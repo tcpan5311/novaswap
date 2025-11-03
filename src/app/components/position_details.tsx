@@ -549,6 +549,47 @@ export default function PositionDetails()
         } 
     }
 
+    const collectFeesOnly = async () => 
+    {
+        if (signer && deploymentAddresses && contracts?.UniswapV3NFTManagerContract && tokenId !== null) 
+        {
+            setLoading(true)
+            try 
+            {
+                const uniswapV3NFTManagerContract = contracts.UniswapV3NFTManagerContract
+
+                const collectFeeTx = await uniswapV3NFTManagerContract.collect
+                ({
+                    tokenId,
+                    amount0: selectedPosition?.tokensOwed0,
+                    amount1: selectedPosition?.tokensOwed1
+                })
+
+                console.log("Collect fees tx sent, waiting for confirmation...")
+                const collectFeeReceipt = await collectFeeTx.wait()
+                console.log(collectFeeReceipt)
+
+                console.log("Fees collected successfully.")
+
+                const updatedPosition = await loadPositionDetails(tokenId)
+                if (updatedPosition) setSelectedPosition(updatedPosition)
+            } 
+            catch (error) 
+            {
+                console.log(error)
+            }
+            finally
+            {
+                setLoading(false)
+            }
+        } 
+    }
+
+    const isCollectFeeDisabled = () => 
+    {
+        return Number(selectedPosition?.tokensOwed0 ?? 0) === 0 && Number(selectedPosition?.tokensOwed1 ?? 0) === 0
+    }
+
     return (
         <Box pos="relative">
             {selectedPosition && (
@@ -597,6 +638,11 @@ export default function PositionDetails()
                                 <Button radius="md" size="sm" ml={10} onClick={() => open2()}>
                                     Remove liquidity
                                 </Button>
+
+                                <Button radius="md" size="sm" ml={10} onClick={() => collectFeesOnly()} disabled={isCollectFeeDisabled()}>
+                                    Collect Fee
+                                </Button>
+
                             </Box>
                         </div>
                         <Divider size="lg" color="purple" mt={10} />

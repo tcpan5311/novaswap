@@ -2,11 +2,9 @@
 import { useSelector, useDispatch } from 'react-redux'
 import type { AppDispatch } from "../redux/store"
 import { blockchainSelector } from '../redux/blockchain_selectors'
-import { connectWallet, fetchDeploymentData, loadBlockchainData, fetchBalances, approveTokenTransaction } from '../redux/blockchain_slice'
+import { connectWallet, loadBlockchainData, fetchBalances, approveTokenTransaction, doesPoolExist } from '../redux/blockchain_slice'
 import { useEffect } from 'react'
-import { MantineProvider} from '@mantine/core'
-import { Card, Text, Grid, NumberInput, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
-// import { useForm } from '@mantine/form'
+import { Card, Text, Grid, TextInput, Textarea, Button, ActionIcon, Group, Popover, UnstyledButton, Modal, Input, ScrollArea, Stack } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import classes from "../../../css_modules/swapmain.module.css"
 import React from 'react'
@@ -14,13 +12,10 @@ import { useState, useRef } from 'react'
 import { IconTransfer, IconSettings, IconSearch } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { CryptocurrencyDetail } from '../redux/types'
-import { ethers, isAddress } from 'ethers'
+import { ethers } from 'ethers'
 import { IconCoinFilled } from '@tabler/icons-react'
 import { handleTokenSelect } from "../utils/token_utils"
-import { TickMath, encodeSqrtRatioX96,  Pool, Position, nearestUsableTick, FeeAmount, TickListDataProvider } from '@uniswap/v3-sdk'
-import { Token, CurrencyAmount} from '@uniswap/sdk-core'
 import ERC20Mintable from '../../../contracts/ERC20Mintable.json'
-import { sqrtPToPriceNumber } from '../utils/compute_token_utils'
 import { validateSwapStep } from '../utils/validator_utils'
 
 let cryptocurrencies: CryptocurrencyDetail[] = []
@@ -67,7 +62,7 @@ const handleSwitchToken =
 export default function SwapMain() 
 {
     const dispatch = useDispatch<AppDispatch>()
-    const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance} = useSelector(blockchainSelector)
+    const {signer, isConnected, deploymentAddresses, contracts, cryptocurrencies, token0Balance, token1Balance, poolExists} = useSelector(blockchainSelector)
 
     const [selectedToken0, setSelectedToken0] = useState<CryptocurrencyDetail | undefined>(undefined)
     const [selectedToken1, setSelectedToken1] = useState<CryptocurrencyDetail | undefined>(undefined)
@@ -175,6 +170,7 @@ export default function SwapMain()
 
         fetchQuote()
     }, [swapValue1, swapValue2, selectedToken0, selectedToken1, quoterContract, activeInput], 500)
+
     
     useEffect(() => 
     {
@@ -193,7 +189,31 @@ export default function SwapMain()
             if (!signer) return
             if (!selectedToken0?.Address || !selectedToken1?.Address) return
 
-            const finalValidation = await validateSwapStep(signer, selectedToken0.Address, selectedToken1.Address, swapValue1, swapValue2, (address: string, signerOrProvider: any) => new ethers.Contract(address, ERC20Mintable.abi, signerOrProvider))
+            if (selectedToken0 && selectedToken1) 
+            {
+                dispatch(doesPoolExist
+                ({
+                    token0Address: selectedToken0.Address,
+                    token1Address: selectedToken1.Address,
+                    fee: 3000
+                }))
+            }
+
+            const finalValidation = await validateSwapStep
+            (
+                signer, 
+                selectedToken0.Address, 
+                selectedToken1.Address, 
+                swapValue1, 
+                swapValue2, 
+                (address: string, signer: any) => new ethers.Contract(address, ERC20Mintable.abi, signer),
+                await dispatch(doesPoolExist
+                ({
+                    token0Address: selectedToken0.Address,
+                    token1Address: selectedToken1.Address,
+                    fee: 3000
+                })).unwrap()
+            )
 
             setIsSwapValid(finalValidation.isValid)
             setSwapValidError(finalValidation.errorMessage || "")
@@ -444,7 +464,9 @@ export default function SwapMain()
                                         }}
                                     >
                                         {!isSwapValid
-                                            ? swapValidError === "insufficient_tokens"
+                                            ? swapValidError === "pool_not_found"
+                                                ? "Pool not found"
+                                                : swapValidError === "insufficient_tokens"
                                                 ? "Insufficient tokens"
                                                 : "Incomplete fields"
                                             : !hasLiquidity
